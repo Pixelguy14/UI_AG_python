@@ -35,8 +35,8 @@ summary_dict = profile.get_description()  # Get full description as dictionary
 #summary_df.to_csv('dataset_summary_df.csv', index=False)
 """
 
-#df = loadDF_Consensus("/home/pixel/Documents/Cinvestav_2025/UI_Analisis_Genomico/Consensus/normalized.consensusXML")
-df = pd.read_csv("/home/pixel/Documents/Cinvestav_2025/UI_Analisis_Genomico/Consensus/xcms_all_features.csv")
+df = loadDF_Consensus("/home/pixel/Documents/Cinvestav_2025/UI_Analisis_Genomico/Consensus/normalized.consensusXML")
+#df = pd.read_csv("/home/pixel/Documents/Cinvestav_2025/UI_Analisis_Genomico/Consensus/xcms_all_features.csv")
 #print(df)
 
 def calc_mad(series):
@@ -104,6 +104,8 @@ def preprocessing_general_dataset_statistics(df):
     general_stats['total_size_in_memory_bytes'] = df.memory_usage(deep=True).sum()
     general_stats['total_size_in_memory_mb'] = general_stats['total_size_in_memory_bytes'] / (1024**2)
 
+    ### get dimensions of df and df.describe
+
     # Number of each variable type
     general_stats['variable_types_count'] = df.dtypes.value_counts().to_dict()
 
@@ -126,70 +128,75 @@ combined_df = pd.concat([general_table, summary_table], axis=1)
 ## then we need correlation matrix (df.corr()), missigno plot library, (msno.matrix(df) or msno.bar(df), )
 
 def visualize_data(df, summary):
-    # Set up figure
-    #plt.figure(figsize=(14, 10))
-    
-    # 1. Missing values heatmap
-    plt.figure()
-    sns.heatmap(df.isnull(), cbar=False, cmap='viridis')
+    """
+    Visualizes key aspects of the DataFrame including missing values,
+    data types distribution, correlation matrix, and overall null vs. non-null values.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame to visualize.
+        summary (pd.DataFrame): A summary DataFrame, expected to have a 'type' column
+                                for variable types distribution.
+    """
+
+    # --- 1. Missing values heatmap ---
+    # Shows the distribution of missing values across the DataFrame.
+    # Rows with missing values will appear as lines, columns with missing values as vertical streaks.
+    # Y-axis is inverted so that the "max value" (last row index) is at the top.
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(df.isnull(), cbar=False, cmap='binary_r') # Using 'viridis' for visibility, though binary is common
     plt.title('Missing Values Distribution')
-    plt.show()
-    
-    # 2. Data types distribution
-    plt.figure()
-    summary['type'].value_counts().plot.pie(autopct='%1.1f%%')
-    plt.title('Variable Types Distribution')
+    plt.gca().invert_yaxis() # Invert Y-axis so max value (last row index) is at the top
     plt.show()
 
+    # --- 2. Data types distribution ---
+    # Shows a bar plot of the count for each variable type in the DataFrame.
+    plt.figure(figsize=(8, 6))
+    type_counts = summary['type'].value_counts()
+    sns.barplot(x=type_counts.index, y=type_counts.values, palette='mako')
+    plt.title('Variable Types Distribution (Counts)')
+    plt.xlabel('Data Type')
+    plt.ylabel('Count')
+    plt.xticks(rotation=45, ha='right') # Rotate labels for better readability
+    plt.tight_layout()
+    plt.show()
+
+    # --- 3. Correlation Matrix ---
+    # Computes and visualizes the correlation matrix for numerical columns.
+    # Uses the 'viridis' colormap as requested.
     numerical_df = df.select_dtypes(include=[np.number])
 
-    if not numerical_df.empty and numerical_df.shape[1] > 1: # Ensure there are at least 2 numerical columns
-        plt.figure(figsize=(10, 8)) # Adjust figure size as needed
+    if not numerical_df.empty and numerical_df.shape[1] > 1:
+        plt.figure(figsize=(10, 8))
         corr_matrix = numerical_df.corr()
-        sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5)
-        plt.title('Correlation Matrix')
+        sns.heatmap(corr_matrix, annot=True, cmap='viridis', fmt=".2f", linewidths=.5)
+        plt.title('Correlation Matrix (Numerical Columns)')
         plt.show()
     else:
         print("Not enough numerical columns to display a correlation matrix.")
 
-    # 4. Bar Plot for Null Values per Column
-    null_counts = df.isnull().sum()
-    # Filter out columns with no missing values if you prefer not to show them
-    null_counts = null_counts[null_counts > 0]
+    # --- 4. Pie Plot for Overall Null vs. Non-Null Values ---
+    # Calculates the total number of null values and non-null values in the entire DataFrame
+    # and displays their proportion in a pie chart.
+    total_elements = df.size # Total number of cells in the DataFrame
+    total_nulls = df.isnull().sum().sum() # Sum of all nulls across all columns
 
-    if not null_counts.empty:
-        plt.figure(figsize=(12, 7)) # Adjust figure size for better readability
-        sns.barplot(x=null_counts.index, y=null_counts.values, palette='mako')
-        plt.title('Number of Null Values Per Column')
-        plt.xlabel('Column Name')
-        plt.ylabel('Number of Null Values')
-        plt.xticks(rotation=45, ha='right') # Rotate labels for better readability
-        plt.tight_layout() # Adjust layout to prevent labels from overlapping
+    if total_elements > 0: # Ensure DataFrame is not empty to avoid division by zero
+        total_non_nulls = total_elements - total_nulls
+
+        # Prepare data for the pie chart
+        labels = ['Null Values', 'Non-Null Values']
+        sizes = [total_nulls, total_non_nulls]
+        colors = ['#ff9999', '#66b3ff'] # Custom colors for better distinction
+        explode = (0.1, 0)  # Explode the 'Null Values' slice for emphasis if nulls exist
+
+        plt.figure(figsize=(8, 8))
+        plt.pie(sizes, explode=explode, labels=labels, colors=colors,
+                autopct='%1.1f%%', shadow=True, startangle=90)
+        plt.title('Overall Null vs. Non-Null Values Distribution')
+        plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
         plt.show()
     else:
-        print("No missing values found in the DataFrame to plot.")
-    """
-    # 3. Numerical variables overview
-    plt.figure()
-    num_cols = summary[summary['type'].str.contains('int|float')]['variable']
-    df[num_cols].plot.kde(alpha=0.5)
-    plt.title('Numerical Variables Distribution')
-    plt.xlabel('Value')
-    plt.show()
-    """
-    """
-    # 4. Categorical cardinality
-    plt.subplot(2, 2, 4)
-    cat_cols = summary[~summary['type'].str.contains('int|float')]['variable']
-    nunique = df[cat_cols].nunique().sort_values()
-    nunique.plot.barh()
-    plt.title('Categorical Variables Cardinality')
-    plt.xlabel('Unique Values Count')
-    """
-    #plt.tight_layout()
-    #plt.savefig('data_overview.png', dpi=300)
-    #plt.show()
-    
+        print("DataFrame is empty, cannot plot null vs. non-null distribution.")
 
 # Generate visualizations
 visualize_data(df, summary_table)

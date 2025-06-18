@@ -42,18 +42,47 @@ def loadDF_Consensus(myConsensusXML):
         # Extract metadata from original file
         column_headers = consensus_map.getColumnHeaders()
         sorted_columns = sorted(column_headers.items(), key=lambda x: x[0])
+        filenames = [os.path.basename(header.filename) for idx, header in sorted_columns]
 
-        # Modify headers from file
-        filenames = [os.path.basename(header.filename) for idx, header in sorted_columns] 
-
+        # Collect all unique meta value keys across all consensus features
+        all_keys = []
+        for cf in consensus_map:
+            keys = []
+            cf.getKeys(keys)  # Correct usage with output parameter
+            all_keys.extend(keys)
+        
+        meta_keys = sorted(set(k.decode() if isinstance(k, bytes) else k for k in all_keys))
+        
         # Build dataframe
         rows = []
         for cf in consensus_map:
             row = {
                 'rt': cf.getRT(),
                 'mz': cf.getMZ(),
-                'intensity': cf.getIntensity()
+                'intensity': cf.getIntensity(),
+                'quality': cf.getQuality(),
+                'charge': cf.getCharge(),
+                'size': cf.size()  # Number of constituent features
             }
+            
+            # Add meta values
+            for key in meta_keys:
+                # Convert key to appropriate type for checking
+                lookup_key = key.encode() if isinstance(key, str) else key
+                if cf.metaValueExists(lookup_key):
+                    value = cf.getMetaValue(lookup_key)
+                    # Handle OpenMS DataValue types
+                    if isinstance(value, oms.DataValue):
+                        if value.valueType() == oms.DataValue.INT_VALUE:
+                            row[key] = int(value)
+                        elif value.valueType() == oms.DataValue.DOUBLE_VALUE:
+                            row[key] = float(value)
+                        else:
+                            row[key] = str(value)
+                    else:
+                        row[key] = str(value)
+                else:
+                    row[key] = np.nan
             
             # Initialize intensities as NaN
             for filename in filenames:
@@ -63,40 +92,109 @@ def loadDF_Consensus(myConsensusXML):
             for fh in cf.getFeatureList():
                 map_idx = fh.getMapIndex()
                 if map_idx < len(filenames):
-                    filename = filenames[map_idx]  # Short name
+                    filename = filenames[map_idx]
                     row[filename] = fh.getIntensity()
             
             rows.append(row)
+        
+        # Create the dataframe
+        df = pd.DataFrame(rows)
+        
+        # Define column order: basic info + meta keys + filenames
+        base_columns = ['rt', 'mz', 'intensity', 'quality', 'charge', 'size']
+        columns = base_columns + meta_keys + filenames
+        
+        # Select only existing columns
+        existing_columns = [col for col in columns if col in df.columns]
+        return df[existing_columns]
+        
     except Exception as e:
         print(f"Error loading ConsensusXML file '{myConsensusXML}': {e}")
         return None
-
-    # Create the dataframe and order the rows
-    df = pd.DataFrame(rows)
-    columns = ['rt', 'mz', 'intensity'] + filenames
-    df = df[columns]
-    return df
 
 def loadDF_Feature(myFeatureXML):
     try:
         feature_map = oms.FeatureMap()
         oms.FeatureXMLFile().load(myFeatureXML, feature_map)
 
+        # Collect all unique meta value keys across all features
+        all_keys = []
+        for feature in feature_map:
+            keys = []
+            feature.getKeys(keys)  # Correct usage with output parameter
+            all_keys.extend(keys)
+        
+        meta_keys = sorted(set(k.decode() if isinstance(k, bytes) else k for k in all_keys))
+        
+        # Get file metadata
+        file_meta = {}
+        map_keys = []
+        feature_map.getKeys(map_keys)
+        for key in map_keys:
+            k = key.decode() if isinstance(key, bytes) else key
+            value = feature_map.getMetaValue(key)
+            if isinstance(value, oms.DataValue):
+                if value.valueType() == oms.DataValue.STRING_VALUE:
+                    file_meta[k] = str(value)
+                elif value.valueType() == oms.DataValue.INT_VALUE:
+                    file_meta[k] = int(value)
+                elif value.valueType() == oms.DataValue.DOUBLE_VALUE:
+                    file_meta[k] = float(value)
+                else:
+                    file_meta[k] = str(value)
+        
         rows = []
-        for f in feature_map: # Iterate through each Feature
+        for feature in feature_map:
             row = {
-                'rt': f.getRT(),
-                'mz': f.getMZ(),
-                'intensity': f.getIntensity()
+                'rt': feature.getRT(),
+                'mz': feature.getMZ(),
+                'intensity': feature.getIntensity(),
+                'quality': feature.getQuality(),
+                'charge': feature.getCharge(),
+                'width': feature.getWidth()
             }
+            
+            # Add convex hull points count
+            hulls = feature.getConvexHulls()
+            if hulls:
+                row['hull_points'] = sum(len(hull.getHullPoints()) for hull in hulls)
+            else:
+                row['hull_points'] = 0
+            
+            # Add meta values
+            for key in meta_keys:
+                # Convert key to appropriate type for checking
+                lookup_key = key.encode() if isinstance(key, str) else key
+                if feature.metaValueExists(lookup_key):
+                    value = feature.getMetaValue(lookup_key)
+                    if isinstance(value, oms.DataValue):
+                        if value.valueType() == oms.DataValue.INT_VALUE:
+                            row[key] = int(value)
+                        elif value.valueType() == oms.DataValue.DOUBLE_VALUE:
+                            row[key] = float(value)
+                        else:
+                            row[key] = str(value)
+                    else:
+                        row[key] = str(value)
+                else:
+                    row[key] = np.nan
+            
             rows.append(row)
-
+        
         df = pd.DataFrame(rows)
-        # Ensure consistent column order
-        columns_order = ['rt', 'mz', 'intensity']
-        df = df[columns_order]
-        return df
-
+        
+        # Add file-level metadata as new columns
+        for key, value in file_meta.items():
+            df[key] = value
+        
+        # Define preferred column order
+        base_columns = ['rt', 'mz', 'intensity', 'quality', 'charge', 'width', 'hull_points']
+        columns = base_columns + meta_keys + list(file_meta.keys())
+        
+        # Select only existing columns
+        existing_columns = [col for col in columns if col in df.columns]
+        return df[existing_columns]
+        
     except Exception as e:
         print(f"Error loading FeatureXML file '{myFeatureXML}': {e}")
         return None
@@ -134,15 +232,17 @@ def loadDF_Excel(myExcelFile, sheet_name=0):
 
 def preprocessing_general_dataset_statistics(df):
     general_stats = {}
-    general_stats['number_of_variables'] = df.shape[1]
-    general_stats['number_of_observations'] = df.shape[0]
-    general_stats['total_missing_cells'] = df.isnull().sum().sum()
-    general_stats['total_missing_cells_pct'] = (general_stats['total_missing_cells'] / (df.shape[0] * df.shape[1])) * 100
-    general_stats['total_size_in_memory_bytes'] = df.memory_usage(deep=True).sum()
-    general_stats['total_size_in_memory_mb'] = general_stats['total_size_in_memory_bytes'] / (1024**2)
+    general_stats['number of variables'] = df.shape[1]
+    general_stats['number of observations'] = df.shape[0]
+    general_stats['total missing cells'] = df.isnull().sum().sum()
+    general_stats['total missing cells %'] = (general_stats['total missing cells'] / (df.shape[0] * df.shape[1])) * 100
+    general_stats['total size in memory bytes'] = df.memory_usage(deep=True).sum()
+    general_stats['total size in memory mb'] = general_stats['total size in memory bytes'] / (1024**2)
+
+    ### get dimensions of df and df.describe
 
     # Number of each variable type
-    general_stats['variable_types_count'] = df.dtypes.value_counts().to_dict()
+    #general_stats['variable_types_count'] = df.dtypes.value_counts().to_dict()
 
     #return general_stats
     return pd.DataFrame([general_stats])
