@@ -1,23 +1,15 @@
-from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget,
-                            QTableView, QHeaderView, QToolBar, QAction, QDialog, QFormLayout,
-                            QLineEdit, QDateEdit, QComboBox, QMessageBox, QLabel, QSplitter,
-                            QDialogButtonBox, QApplication, QFrame, QGridLayout, QSizePolicy,
-                            QStackedWidget, QSpinBox, QTableWidget, QTableWidgetItem)
-from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex, QDate, QSize
-from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor
-from PyQt5.QtSql import QSqlDatabase, QSqlQuery, QSqlTableModel, QSqlQueryModel
-from datetime import datetime
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from PyQt5 import QtCore
+from PyQt5.QtWidgets import (QPushButton, QVBoxLayout, QHBoxLayout, QWidget,
+                            QHeaderView, QDialog, QComboBox, QLabel, 
+                            QDialogButtonBox, QTableWidget, QTableWidgetItem)
+from PyQt5.QtCore import Qt
 import pandas as pd
 
 class DialogMetadataModel(QDialog):
     def __init__(self, df, lM, lS, parent=None):
         super().__init__(parent)
         self.df = df
-        self.listMeta = lM
-        self.listSamp = lS
+        self.listMeta = lM # list of the headers in metadata dataframe
+        self.listSamp = lS # list of the headers in samples dataframe
         self.assignments = {col: "undefined" for col in df.columns}
         self.setWindowTitle("Assign Column Types")
         self.setMinimumSize(600, 400)
@@ -30,15 +22,7 @@ class DialogMetadataModel(QDialog):
 
         # Title
         title_label = QLabel("Assign Column Types")
-        title_label.setObjectName("title_label")
-        title_label.setStyleSheet("""
-            QLabel#title_label {
-                font-size: 18px;
-                font-weight: bold;
-                color: white;
-                padding-bottom: 10px;
-            }
-        """)
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
         main_layout.addWidget(title_label)
 
         # Create table widget
@@ -147,11 +131,9 @@ class DialogMetadataModel(QDialog):
         self.setLayout(main_layout)
 
     def updateAssignment(self, column, assignment):
-        """Update column assignment when combo box changes"""
         self.assignments[column] = assignment
 
     def removeColumn(self):
-        """Handle column removal"""
         button = self.sender()
         column = button.property("column")
         
@@ -163,7 +145,6 @@ class DialogMetadataModel(QDialog):
                 break
 
     def getResults(self):
-        """Return the split dataframes based on assignments"""
         # Create metadata and sample dataframes
         metadata_cols = [col for col, assign in self.assignments.items() 
                         if assign == "metadata" and col in self.df.columns]

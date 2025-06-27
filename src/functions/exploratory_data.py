@@ -231,21 +231,62 @@ def loadDF_Excel(myExcelFile, sheet_name=0):
         return None
 
 def preprocessing_general_dataset_statistics(df):
+    if df.empty:
+        return pd.DataFrame()
+    
     general_stats = {}
-    general_stats['number of variables'] = df.shape[1]
-    general_stats['number of observations'] = df.shape[0]
-    general_stats['total missing cells'] = df.isnull().sum().sum()
-    general_stats['total missing cells %'] = (general_stats['total missing cells'] / (df.shape[0] * df.shape[1])) * 100
-    general_stats['total size in memory bytes'] = df.memory_usage(deep=True).sum()
-    general_stats['total size in memory mb'] = general_stats['total size in memory bytes'] / (1024**2)
-
-    ### get dimensions of df and df.describe
-
-    # Number of each variable type
-    #general_stats['variable_types_count'] = df.dtypes.value_counts().to_dict()
-
-    #return general_stats
-    return pd.DataFrame([general_stats])
+    
+    # Basic dataset information
+    general_stats['number_of_variables'] = df.shape[1]
+    general_stats['number_of_observations'] = df.shape[0]
+    general_stats['total_missing_cells'] = df.isnull().sum().sum()
+    general_stats['total_missing_cells_%'] = (general_stats['total_missing_cells'] / 
+                                             (df.shape[0] * df.shape[1])) * 100
+    general_stats['total_size_in_memory_bytes'] = df.memory_usage(deep=True).sum()
+    general_stats['total_size_in_memory_mb'] = general_stats['total_size_in_memory_bytes'] / (1024**2)
+    
+    # Data type distribution
+    type_counts = df.dtypes.value_counts().to_dict()
+    for dtype, count in type_counts.items():
+        general_stats[f'variables_{dtype}'] = count
+    
+    # Missing values details
+    general_stats['variables_with_missing_values'] = df.isnull().any().sum()
+    general_stats['observations_with_missing_values'] = df.isnull().any(axis=1).sum()
+    
+    # Descriptive statistics (similar to df.describe())
+    if df.select_dtypes(include=np.number).shape[1] > 0:
+        num_stats = df.describe(include=[np.number]).mean().to_dict()
+        for stat, value in num_stats.items():
+            general_stats[f'avg_{stat}_over_numeric_cols'] = value
+    
+    if df.select_dtypes(exclude=np.number).shape[1] > 0:
+        cat_stats = df.describe(exclude=[np.number]).mean().to_dict()
+        for stat, value in cat_stats.items():
+            general_stats[f'avg_{stat}_over_categorical_cols'] = value
+    
+    # Quantile information
+    quantiles = df.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
+    for q in quantiles.index:
+        q_stats = quantiles.loc[q].mean()
+        general_stats[f'avg_{int(q*100)}_percentile'] = q_stats
+    
+    # Create DataFrame with sorted columns for better readability
+    result_df = pd.DataFrame([general_stats])
+    
+    # Sort columns logically
+    preferred_order = [
+        'number_of_variables', 'number_of_observations',
+        'total_missing_cells', 'total_missing_cells_%',
+        'variables_with_missing_values', 'observations_with_missing_values',
+        'total_size_in_memory_bytes', 'total_size_in_memory_mb'
+    ]
+    
+    # Add remaining columns
+    remaining_cols = [col for col in result_df.columns if col not in preferred_order]
+    sorted_cols = preferred_order + sorted(remaining_cols)
+    
+    return result_df[sorted_cols]
 
 def calc_mad(series):
         median_val = np.median(series)

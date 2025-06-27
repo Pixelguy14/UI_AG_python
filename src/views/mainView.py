@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
-                            QTableView, QHeaderView, QToolBar, QAction, QDialog, QFormLayout, 
-                            QLineEdit, QDateEdit, QComboBox, QMessageBox, QLabel, QSplitter,
+                            QTableView, QHeaderView, QToolBar, QDialog, 
+                            QLineEdit, QDateEdit, QComboBox, QMessageBox, QLabel,
                             QDialogButtonBox, QApplication, QFrame, QGridLayout, QSizePolicy, 
                             QStackedWidget, QSpinBox, QTabWidget, QTextEdit, QDoubleSpinBox, 
                             QAbstractScrollArea)
@@ -8,16 +8,15 @@ from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex, QDate, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor, QStandardItemModel
 from PyQt5.QtSql import QSqlDatabase, QSqlQuery, QSqlTableModel, QSqlQueryModel
 import xdialog
-from datetime import datetime
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import threading
-from PyQt5 import QtCore
 import pandas as pd
 
 from src.functions.exploratory_data import *
+from src.functions.imputation_methods import *
 from src.models.metadata_dialogmodel import *
+from src.models.imputation_dialogmodel import *
+from src.models.umbral_dialogmodel import *
 from src.models.pandas_tablemodel import *
+from src.models.plot_widgetmodel import *
 
 class mainView(QMainWindow):
     def __init__(self):
@@ -31,6 +30,7 @@ class mainView(QMainWindow):
 
         self.DfMetadata = PandasModel(emptyDF) # Model of the metadata from the Main Df
         self.DfSample = PandasModel(emptyDF) # Model of the sample data from the Main Df
+        self.DfSampleUmb = PandasModel(emptyDF) # Model of the umbralized sample data
 
         self.DfReset = PandasModel(emptyDF) # Incase you'll want to reset the Df to before any changes.
 
@@ -46,10 +46,15 @@ class mainView(QMainWindow):
                 background-color: #3156A1;
                 font-family: Arial;
             }
+            QGridLayout {
+                background-color: #F2F2F2;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
             QTableView {
                 border: 1px solid #ddd;
                 border-radius: 4px;
-                background-color: white;
+                background-color: #F2F2F2;
                 alternate-background-color: #f9f9f9;
                 selection-background-color: #94a7cb;
                 selection-color: white;
@@ -108,7 +113,7 @@ class mainView(QMainWindow):
                 font-weight: bold;
             }
             QFrame#chartFrame {
-                background-color: white;
+                background-color: #F2F2F2;
                 border: 1px solid #ddd;
                 border-radius: 4px;
             }
@@ -121,26 +126,27 @@ class mainView(QMainWindow):
         self.addToolBar(self.toolbar)
 
         # Toolbar title
-        title_label = QLabel("Genomics GUI")
+        title_label = QLabel("Omics GUI")
         title_label.setObjectName("titleLabel")
         self.toolbar.addWidget(title_label)
 
         self.toolbar.addSeparator()
 
         # Action button for the toolbar
-        self.btn_loadOpenms = QPushButton("Load File")
-        self.btn_loadOpenms.setCursor(Qt.PointingHandCursor)
-        self.btn_loadOpenms.clicked.connect(
-            #lambda: self.setDFModel("/home/pixel/Documents/Cinvestav_2025/UI_Analisis_Genomico/Consensus/normalized.consensusXML")
-            lambda: self.setDFModel()
-        )
-        self.toolbar.addWidget(self.btn_loadOpenms)
+        self.btnLoadFile = QPushButton("Load File")
+        self.btnLoadFile.setCursor(Qt.PointingHandCursor)
+        self.btnLoadFile.clicked.connect(lambda: self.setDFModel())
+        self.toolbar.addWidget(self.btnLoadFile)
 
-        self.btn_defineMD = QPushButton("Define Metadata")
-        self.btn_defineMD.setCursor(Qt.PointingHandCursor)
-        #self.btn_defineMD.clicked.connect(lambda: self.setDFModel())
-        self.btn_defineMD.clicked.connect(lambda: self.viewMetadataModel())
-        self.toolbar.addWidget(self.btn_defineMD)
+        self.btnDefineMD = QPushButton("Define Metadata")
+        self.btnDefineMD.setCursor(Qt.PointingHandCursor)
+        self.btnDefineMD.clicked.connect(lambda: self.viewMetadataModel())
+        self.toolbar.addWidget(self.btnDefineMD)
+
+        self.btnDefineC = QPushButton("Define Classes")
+        self.btnDefineC.setCursor(Qt.PointingHandCursor)
+        self.btnDefineC.clicked.connect(lambda: self.viewMetadataModel())
+        self.toolbar.addWidget(self.btnDefineC)
 
         self.toolbar.addSeparator()
 
@@ -151,81 +157,81 @@ class mainView(QMainWindow):
         self.toolbar.addWidget(spacer)
 
         # button to reset the dataframe to it's original state
-        self.logout_btn = QPushButton("Reset Dataframe")
-        self.logout_btn.setCursor(Qt.PointingHandCursor)
-        self.logout_btn.clicked.connect(self.resetOriginal)
-        self.toolbar.addWidget(self.logout_btn)
+        self.btnLogout = QPushButton("Reset Dataframe")
+        self.btnLogout.setCursor(Qt.PointingHandCursor)
+        self.btnLogout.clicked.connect(self.resetOriginal)
+        self.toolbar.addWidget(self.btnLogout)
         
         # button to exit
-        self.logout_btn = QPushButton("Exit")
-        self.logout_btn.setCursor(Qt.PointingHandCursor)
-        self.logout_btn.clicked.connect(self.logout)
-        self.toolbar.addWidget(self.logout_btn)
+        self.btnLogout = QPushButton("Exit")
+        self.btnLogout.setCursor(Qt.PointingHandCursor)
+        self.btnLogout.clicked.connect(self.logout)
+        self.toolbar.addWidget(self.btnLogout)
 
         # Main tab widget
-        self.tab_widget = QTabWidget()
-        self.tab_widget.setTabPosition(QTabWidget.West)
+        self.tabWidget = QTabWidget()
+        self.tabWidget.setTabPosition(QTabWidget.West)
         
-        self.summary_tab = QWidget()
+        self.tabSummary = QWidget()
         self.setupSummaryTab()
-        self.tab_widget.addTab(self.summary_tab, "Summary view")
+        self.tabWidget.addTab(self.tabSummary, "Summary")
         
-        self.df_tab = QWidget()
+        self.tabDf = QWidget()
         self.setupDFTab()
-        self.tab_widget.addTab(self.df_tab, "DataFrame View")
+        self.tabWidget.addTab(self.tabDf, "DataFrame")
 
-        self.imputation_tab = QWidget()
+        self.tabImputation = QWidget()
         self.setupImputationTab()
-        self.tab_widget.addTab(self.imputation_tab, "Imputation View")
+        self.tabWidget.addTab(self.tabImputation, "Imputation")
         
-        self.setCentralWidget(self.tab_widget)
+        self.setCentralWidget(self.tabWidget)
 
     def setupSummaryTab(self):
         self.Plotgrid = QGridLayout()
 
         # Create a vertical layout for the plot section
         container1 = QVBoxLayout()
-        self.Log2_plotWidget = PlotWidgetQC(self.summary_tab)
-        container1.addWidget(self.Log2_plotWidget)
+        self.plotWidgetLog2 = PlotWidgetQC(self.tabSummary)
+        container1.addWidget(self.plotWidgetLog2)
         # Add container to grid
         self.Plotgrid.addLayout(container1, 0, 0, 3, 2) # row, col, rowSpan, colSpan
 
         # Create a vertical layout for the plot section
         container2 = QVBoxLayout()
-        self.missing_heatmap_widget = PlotWidgetQC(self.summary_tab)
-        container2.addWidget(self.missing_heatmap_widget)
+        self.plotWidgetMissingHeatmap = PlotWidgetQC(self.tabSummary)
+        container2.addWidget(self.plotWidgetMissingHeatmap)
         # Add container to grid
         self.Plotgrid.addLayout(container2, 3, 0, 4, 2) # row, col, rowSpan, colSpan
 
         # Create a vertical layout for the plot section
         container3 = QVBoxLayout()
         # Create invisible table for general data
-        self.general_data_table = QTableView()
-        self.general_data_table.setVisible(False)  # Initially hidden
-        self.general_data_table.setAlternatingRowColors(True)
-        self.general_data_table.setEditTriggers(QTableView.NoEditTriggers)
-        self.general_data_table.verticalHeader().setVisible(False)
-        #self.general_data_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tableGeneralData = QTableView()
+        self.tableGeneralData.setVisible(False)  # Initially hidden
+        self.tableGeneralData.setAlternatingRowColors(True)
+        self.tableGeneralData.setEditTriggers(QTableView.NoEditTriggers)
+        self.tableGeneralData.verticalHeader().setVisible(False)
+        #self.tableGeneralData.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Create model for general data
         self.colGeneral = QStandardItemModel()
-        self.general_data_table.setModel(self.colGeneral)
+        self.tableGeneralData.setModel(self.colGeneral)
 
-        container3.addWidget(self.general_data_table)
+        container3.addWidget(self.tableGeneralData)
         # Add container to grid
         self.Plotgrid.addLayout(container3, 7, 0, 2, 2) # row, col, rowSpan, colSpan
 
         # Create a vertical layout for the plot section
         container4 = QVBoxLayout()
-        self.correlation_widget = PlotWidgetQC(self.summary_tab)
-        container4.addWidget(self.correlation_widget)
+        self.plotWidgetCorrelation = PlotWidgetQC(self.tabSummary)
+        container4.addWidget(self.plotWidgetCorrelation)
         # Add container to grid
         self.Plotgrid.addLayout(container4, 0, 2, 6, 4) # row, col, rowSpan, colSpan
 
         # Create a vertical layout for the plot section
         container4 = QVBoxLayout()
-        self.data_types_widget = PlotWidgetQC(self.summary_tab)
-        container4.addWidget(self.data_types_widget)
+        self.plotWidgetDataTypes = PlotWidgetQC(self.tabSummary)
+        container4.addWidget(self.plotWidgetDataTypes)
         # Add container to grid
         self.Plotgrid.addLayout(container4, 6, 2, 3, 2) # row, col, rowSpan, colSpan
         
@@ -259,28 +265,30 @@ class mainView(QMainWindow):
         # 3+3+3+4+4+4+3+1=25
         # first 3: 9/25 second 3: 12/25 rest: 3/25 rest: 1/25
 
-        self.summary_tab.setLayout(self.Plotgrid)
+        self.tabSummary.setLayout(self.Plotgrid)
 
     def setupDFTab(self):
         # Create main grid layout
         self.DFgrid = QGridLayout()
+        self.DFgrid.setContentsMargins(0, 0, 0, 0)
+        self.DFgrid.setSpacing(10)
         
         # Create a vertical layout for the table section
-        table_container = QVBoxLayout()
+        verticalBoxLayout = QVBoxLayout()
         
         # Title
         title = QLabel("DataFrame Table")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
-        table_container.addWidget(title)
+        verticalBoxLayout.addWidget(title)
         
         # Main DataFrame table
-        self.DF_table = QTableView()
-        self.DF_table.setAlternatingRowColors(True)
-        self.DF_table.setSelectionBehavior(QTableView.SelectItems)  # Changed to SelectItems
-        self.DF_table.setEditTriggers(QTableView.NoEditTriggers)
+        self.dfTable = QTableView()
+        self.dfTable.setAlternatingRowColors(True)
+        self.dfTable.setSelectionBehavior(QTableView.SelectItems)  # Changed to SelectItems
+        self.dfTable.setEditTriggers(QTableView.NoEditTriggers)
         
         # Configure header
-        header = self.DF_table.horizontalHeader()
+        header = self.dfTable.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setMinimumSectionSize(70)
         header.setDefaultSectionSize(150)
@@ -288,70 +296,306 @@ class mainView(QMainWindow):
         header.sectionClicked.connect(self.onColumnDFClicked)  # Connect column header clicks
         
         # Configure table behavior
-        self.DF_table.setHorizontalScrollMode(QTableView.ScrollPerPixel)
-        self.DF_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.DF_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.DF_table.verticalHeader().setVisible(False)
-        self.DF_table.verticalHeader().setDefaultSectionSize(50)
-        self.DF_table.setSortingEnabled(True)
+        self.dfTable.setHorizontalScrollMode(QTableView.ScrollPerPixel)
+        self.dfTable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.dfTable.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.dfTable.verticalHeader().setVisible(False)
+        self.dfTable.verticalHeader().setDefaultSectionSize(50)
+        #self.dfTable.setSortingEnabled(True)
         
         # Set the PandasModel
         self.DfModel = PandasModel()
-        self.DF_table.setModel(self.DfModel)
-        table_container.addWidget(self.DF_table)
+        self.dfTable.setModel(self.DfModel)
+        verticalBoxLayout.addWidget(self.dfTable)
         
         # Add instruction label
-        self.instruction_label = QLabel("Click a column header to display column data")
-        self.instruction_label.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
-        self.instruction_label.setAlignment(Qt.AlignCenter)
-        table_container.addWidget(self.instruction_label)
+        self.labelInstruction = QLabel("Click a column header to display column data")
+        self.labelInstruction.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
+        self.labelInstruction.setAlignment(Qt.AlignCenter)
+        verticalBoxLayout.addWidget(self.labelInstruction)
         
         # Add table container to grid
-        self.DFgrid.addLayout(table_container, 0, 0, 5, 5)  # row, col, rowSpan, colSpan
+        self.DFgrid.addLayout(verticalBoxLayout, 0, 0, 5, 5)  # row, col, rowSpan, colSpan
         
-        null_distribution_container = QVBoxLayout()
-        self.null_distribution_widget = PlotWidgetQC(self.df_tab)
-        #self.null_distribution_widget.setMinimumHeight(300)
-        #self.null_distribution_widget.setMinimumWidth(300)
-        null_distribution_container.addWidget(self.null_distribution_widget)
-        self.DFgrid.addLayout(null_distribution_container, 0, 5, 2, 2)
+        verticalBoxLayoutNullDistribution = QVBoxLayout()
+        self.plotWidgetNullDistribution = PlotWidgetQC(self.tabDf)
+        #self.plotWidgetNullDistribution.setMinimumHeight(300)
+        #self.plotWidgetNullDistribution.setMinimumWidth(300)
+        verticalBoxLayoutNullDistribution.addWidget(self.plotWidgetNullDistribution)
+        self.DFgrid.addLayout(verticalBoxLayoutNullDistribution, 0, 5, 2, 2)
 
         # Create a vertical layout for the table section
-        coltable_container = QVBoxLayout()
+        colverticalBoxLayout = QVBoxLayout()
         
         # Title
         self.titleColinfo = QLabel("Column Information")
         self.titleColinfo.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
         self.titleColinfo.setVisible(False)  # Initially hidden
-        coltable_container.addWidget(self.titleColinfo)
+        colverticalBoxLayout.addWidget(self.titleColinfo)
         
         # Create invisible table for column data
-        self.column_table = QTableView()
-        self.column_table.setVisible(False)  # Initially hidden
-        self.column_table.setAlternatingRowColors(True)
-        self.column_table.setEditTriggers(QTableView.NoEditTriggers)
-        self.column_table.verticalHeader().setVisible(False)
-        self.column_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tableColumn = QTableView()
+        self.tableColumn.setVisible(False)  # Initially hidden
+        self.tableColumn.setAlternatingRowColors(True)
+        self.tableColumn.setEditTriggers(QTableView.NoEditTriggers)
+        self.tableColumn.verticalHeader().setVisible(False)
+        self.tableColumn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Create model for column data
         self.colModel = QStandardItemModel()
-        self.column_table.setModel(self.colModel)
+        self.tableColumn.setModel(self.colModel)
 
-        coltable_container.addWidget(self.column_table)
+        colverticalBoxLayout.addWidget(self.tableColumn)
 
-        self.DFgrid.addLayout(coltable_container, 2, 5, 3, 2) # row, col, rowSpan, colSpan
+        self.DFgrid.addLayout(colverticalBoxLayout, 2, 5, 3, 2) # row, col, rowSpan, colSpan
         
         self.DFgrid.setColumnStretch(0, 5)  # Table area fixed size
         self.DFgrid.setColumnStretch(5, 2)   # Plot area fixed size
 
-        self.df_tab.setLayout(self.DFgrid)
+        self.tabDf.setLayout(self.DFgrid)
     
     def setupImputationTab(self):
         self.ImputationGrid = QGridLayout()
-        self.imputation_tab.setLayout(self.ImputationGrid)
+
+        # Create an horizontal layout above the grid that contains imputation related operations
+        horizontalBoxLayoutImputation = QHBoxLayout()
+
+        btnUmbralization = QPushButton("Umbralize")
+        btnUmbralization.setCursor(Qt.PointingHandCursor)
+        btnUmbralization.clicked.connect(lambda: self.viewUmbralizationModel())
+        btnUmbralization.setStyleSheet("padding: 4px 8px;")
+        horizontalBoxLayoutImputation.addWidget(btnUmbralization)
+
+        btnImputation = QPushButton("Imputation Methods")
+        btnImputation.setCursor(Qt.PointingHandCursor)
+        btnImputation.clicked.connect(lambda: self.viewImputationModel())
+        btnImputation.setStyleSheet("padding: 4px 8px;")
+        horizontalBoxLayoutImputation.addWidget(btnImputation)
+
+        btnTargetDecoy = QPushButton("Target Decoy Miner")
+        btnTargetDecoy.setCursor(Qt.PointingHandCursor)
+        #self.btnTargetDecoy.clicked.connect()
+        btnTargetDecoy.setStyleSheet("padding: 4px 8px;")
+        horizontalBoxLayoutImputation.addWidget(btnTargetDecoy)
+
+        btnNormalize = QPushButton("Normalize")
+        btnNormalize.setCursor(Qt.PointingHandCursor)
+        #self.btnNormalize.clicked.connect()
+        btnNormalize.setStyleSheet("padding: 4px 8px;")
+        horizontalBoxLayoutImputation.addWidget(btnNormalize)
+
+        btnEvalDist = QPushButton("Evaluate Sample Distribution")
+        btnEvalDist.setCursor(Qt.PointingHandCursor)
+        #self.btnEvalDist.clicked.connect()
+        btnEvalDist.setStyleSheet("padding: 4px 8px;")
+        horizontalBoxLayoutImputation.addWidget(btnEvalDist)
+
+        self.ImputationGrid.addLayout(horizontalBoxLayoutImputation, 0, 0, 1, 8)
+
+        # Create the tab widget
+        self.imputationTabWidget = QTabWidget()
+        self.ImputationGrid.addWidget(self.imputationTabWidget, 1, 0, 7, 8)
+
+        # -- Analysis Tab --
+        self.analysisTab = QWidget()
+        self.imputationTabWidget.addTab(self.analysisTab, "Analysis")
+        self.setupAnalysisTab()
+
+        # -- Comparison Tab --
+        self.comparisonTab = QWidget()
+        self.imputationTabWidget.addTab(self.comparisonTab, "Comparison")
+        self.setupComparisonTab()
+
+        # -- View Distribution Tab --
+        self.viewDistributionTab = QWidget()
+        self.imputationTabWidget.addTab(self.viewDistributionTab, "View Distribution")
+        self.setupViewDistributionTab()
+
+        self.tabImputation.setLayout(self.ImputationGrid)
+
+    def setupAnalysisTab(self):
+        # Create main grid layout
+        self.analysisGrid = QGridLayout()
+        self.analysisGrid.setContentsMargins(0, 0, 0, 0)
+        self.analysisGrid.setSpacing(10)
+        
+        # Create a vertical layout for the table section
+        verticalBoxLayout = QVBoxLayout()
+        
+        # Title
+        title = QLabel("Analysis DataFrame Table")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        verticalBoxLayout.addWidget(title)
+        
+        # Main DataFrame table
+        self.dfAnalysisTable = QTableView()
+        self.dfAnalysisTable.setAlternatingRowColors(True)
+        self.dfAnalysisTable.setSelectionBehavior(QTableView.SelectItems)
+        self.dfAnalysisTable.setEditTriggers(QTableView.NoEditTriggers)
+        
+        # Configure header
+        header = self.dfAnalysisTable.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setMinimumSectionSize(70)
+        header.setDefaultSectionSize(150)
+        header.setMaximumSectionSize(300)
+        header.sectionClicked.connect(self.onColumnAnalysisClicked)
+        
+        # Configure table behavior
+        self.dfAnalysisTable.setHorizontalScrollMode(QTableView.ScrollPerPixel)
+        self.dfAnalysisTable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.dfAnalysisTable.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.dfAnalysisTable.verticalHeader().setVisible(False)
+        self.dfAnalysisTable.verticalHeader().setDefaultSectionSize(50)
+        
+        # Set the PandasModel
+        self.DfSampleUmb = PandasModel()
+        self.dfAnalysisTable.setModel(self.DfSampleUmb)
+        verticalBoxLayout.addWidget(self.dfAnalysisTable)
+        
+        # Add instruction label
+        self.labelInstructionAnalysis = QLabel("Click a column header to display column data")
+        self.labelInstructionAnalysis.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
+        self.labelInstructionAnalysis.setAlignment(Qt.AlignCenter)
+        verticalBoxLayout.addWidget(self.labelInstructionAnalysis)
+        
+        # Add table container to grid
+        self.analysisGrid.addLayout(verticalBoxLayout, 0, 0, 5, 5)
+        
+        verticalBoxLayoutNullDistribution = QVBoxLayout()
+        self.plotWidgetNullDistributionAnalysis = PlotWidgetQC(self.analysisTab)
+        verticalBoxLayoutNullDistribution.addWidget(self.plotWidgetNullDistributionAnalysis)
+        self.analysisGrid.addLayout(verticalBoxLayoutNullDistribution, 0, 5, 2, 2)
+
+        # Create a vertical layout for the table section
+        colverticalBoxLayout = QVBoxLayout()
+        
+        # Title
+        self.titleColinfoAnalysis = QLabel("Column Information")
+        self.titleColinfoAnalysis.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        self.titleColinfoAnalysis.setVisible(False)
+        colverticalBoxLayout.addWidget(self.titleColinfoAnalysis)
+        
+        # Create invisible table for column data
+        self.tableColumnAnalysis = QTableView()
+        self.tableColumnAnalysis.setVisible(False)
+        self.tableColumnAnalysis.setAlternatingRowColors(True)
+        self.tableColumnAnalysis.setEditTriggers(QTableView.NoEditTriggers)
+        self.tableColumnAnalysis.verticalHeader().setVisible(False)
+        self.tableColumnAnalysis.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # Create model for column data
+        self.colModelAnalysis = QStandardItemModel()
+        self.tableColumnAnalysis.setModel(self.colModelAnalysis)
+
+        colverticalBoxLayout.addWidget(self.tableColumnAnalysis)
+
+        self.analysisGrid.addLayout(colverticalBoxLayout, 2, 5, 3, 2)
+        
+        self.analysisGrid.setColumnStretch(0, 5)
+        self.analysisGrid.setColumnStretch(5, 2)
+
+        self.analysisTab.setLayout(self.analysisGrid)
+
+    def setupComparisonTab(self):
+        self.comparisonGrid = QGridLayout()
+
+        # Create a vertical layout for the first table section
+        verticalBoxLayout1 = QVBoxLayout()
+        
+        # Title
+        title1 = QLabel("Original Sample DataFrame")
+        title1.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        verticalBoxLayout1.addWidget(title1)
+        
+        # Original Sample DataFrame table
+        self.DfSample = PandasModel()
+        self.dfSampleTableOrig = QTableView()
+        self.dfSampleTableOrig.setAlternatingRowColors(True)
+        self.dfSampleTableOrig.setEditTriggers(QTableView.NoEditTriggers)
+        self.dfSampleTableOrig.setModel(self.DfSample)
+        verticalBoxLayout1.addWidget(self.dfSampleTableOrig)
+
+        self.comparisonGrid.addLayout(verticalBoxLayout1, 0, 0, 1, 1)
+
+        # Create a vertical layout for the second table section
+        verticalBoxLayout2 = QVBoxLayout()
+        
+        # Title
+        title2 = QLabel("Processed Sample DataFrame")
+        title2.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        verticalBoxLayout2.addWidget(title2)
+        
+        # Processed Sample DataFrame table
+        self.DfSampleUmb = PandasModel()
+        self.dfSampleTableProc = QTableView()
+        self.dfSampleTableProc.setAlternatingRowColors(True)
+        self.dfSampleTableProc.setEditTriggers(QTableView.NoEditTriggers)
+        self.dfSampleTableProc.setModel(self.DfSampleUmb)
+        verticalBoxLayout2.addWidget(self.dfSampleTableProc)
+
+        self.comparisonGrid.addLayout(verticalBoxLayout2, 0, 1, 1, 1)
+
+        self.comparisonTab.setLayout(self.comparisonGrid)
+
+    def setupViewDistributionTab(self):
+        self.viewDistributionGrid = QGridLayout()
+
+        # Create a vertical layout for the table section
+        verticalBoxLayout = QVBoxLayout()
+        
+        # Title
+        title = QLabel("Sample DataFrame Table")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+        verticalBoxLayout.addWidget(title)
+        
+        # Sample DataFrame table 
+        self.dfSampleTable = QTableView()
+        self.dfSampleTable.setAlternatingRowColors(True)
+        self.dfSampleTable.setSelectionBehavior(QTableView.SelectItems)
+        self.dfSampleTable.setEditTriggers(QTableView.NoEditTriggers)
+        
+        # Configure header
+        header = self.dfSampleTable.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setMinimumSectionSize(70)
+        header.setDefaultSectionSize(150)
+        header.setMaximumSectionSize(300)
+        
+        # Configure table behavior
+        self.dfSampleTable.setHorizontalScrollMode(QTableView.ScrollPerPixel)
+        self.dfSampleTable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.dfSampleTable.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.dfSampleTable.verticalHeader().setVisible(False)
+        self.dfSampleTable.verticalHeader().setDefaultSectionSize(50)
+        
+        # Set the PandasModel
+        self.DfSampleUmb = PandasModel()
+        self.dfSampleTable.setModel(self.DfSampleUmb)
+        verticalBoxLayout.addWidget(self.dfSampleTable)
+        
+        # Add instruction label
+        self.labelInstructionImp = QLabel("Click a column header to display column distribution")
+        self.labelInstructionImp.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
+        self.labelInstructionImp.setAlignment(Qt.AlignCenter)
+        verticalBoxLayout.addWidget(self.labelInstructionImp)
+        
+        # Add table container to grid
+        self.viewDistributionGrid.addLayout(verticalBoxLayout, 0, 0, 4, 4)
+
+        # Create a vertical layout for the plot section
+        plotVerticalBoxLayout = QVBoxLayout()
+        self.plotWidgetDistribution = PlotWidgetQC(self.viewDistributionTab)
+        plotVerticalBoxLayout.addWidget(self.plotWidgetDistribution)
+        self.viewDistributionGrid.addLayout(plotVerticalBoxLayout, 0, 4, 4, 4)
+
+        self.viewDistributionGrid.setColumnStretch(0, 4)
+        self.viewDistributionGrid.setColumnStretch(4, 4)
+        self.viewDistributionTab.setLayout(self.viewDistributionGrid)
+
+        header.sectionClicked.connect(self.onColumnDistributionClicked)
 
     def setDFModel(self):
-
         file_path = xdialog.open_file(
             title="Select a compatible file", 
             filetypes=[
@@ -375,12 +619,12 @@ class mainView(QMainWindow):
             print("Failed to load data or no compatible data could build the dataframe from the selected file.")
             return None
     
-        self.Log2_plotWidget.clear_plot()
-        self.missing_heatmap_widget.clear_plot()
-        self.correlation_widget.clear_plot()
-        self.null_distribution_widget.clear_plot()
+        self.plotWidgetLog2.clear_plot()
+        self.plotWidgetMissingHeatmap.clear_plot()
+        self.plotWidgetCorrelation.clear_plot()
+        self.plotWidgetNullDistribution.clear_plot()
         self.titleColinfo.setVisible(False)
-        self.column_table.setVisible(False)
+        self.tableColumn.setVisible(False)
         self.old_column = ""
         
         # Start of Column Renaming Logic
@@ -411,26 +655,28 @@ class mainView(QMainWindow):
             #print(type(self.DfModel))
         # We assign the initial model to a copy for resetting in this state
         self.DfReset._df = self.DfModel._df
+        """
         self.DfModel.rename_columns({
             "rt": "RT",
             "mz": "m/z",
             "intensity": "Intensity"
         }, italic_cols=["m/z"])
-        
+        """
+
         # Set the model to the table view
-        self.DF_table.setModel(self.DfModel)
+        self.dfTable.setModel(self.DfModel)
 
         # Reapply header settings (essential after model change)
-        header = self.DF_table.horizontalHeader()
+        header = self.dfTable.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
-        header.setMinimumSectionSize(100)
-        header.setDefaultSectionSize(150)
-        header.setMaximumSectionSize(300)        
+        header.setMinimumSectionSize(90)
+        header.setDefaultSectionSize(120)
+        header.setMaximumSectionSize(150)        
 
         #self.loadLogSamplePlot()
         self.loadGeneralDataTable()
 
-        self.data_types_widget.plot_data_types_distribution(preprocessing_summary_perVariable(self.DfModel._df))
+        self.plotWidgetDataTypes.plot_data_types_distribution(preprocessing_summary_perVariable(self.DfModel._df))
 
         print("Data successfully loaded and displayed")
 
@@ -438,43 +684,45 @@ class mainView(QMainWindow):
         summaryDF = preprocessing_general_dataset_statistics(self.DfModel._df)
         # Update the column table model
         self.colGeneral = PandasModel(summaryDF.T)
-        self.general_data_table.setModel(self.colGeneral)
+        self.tableGeneralData.setModel(self.colGeneral)
 
-        header = self.general_data_table.horizontalHeader()
+        header = self.tableGeneralData.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setMinimumSectionSize(300)
         header.setDefaultSectionSize(300)
         header.setMaximumSectionSize(500) 
         
         # Adjust column table settings
-        self.general_data_table.verticalHeader().setVisible(True)
-        self.general_data_table.horizontalHeader().setVisible(False)
-        self.general_data_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tableGeneralData.verticalHeader().setVisible(True)
+        self.tableGeneralData.horizontalHeader().setVisible(False)
+        self.tableGeneralData.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         # Hide instruction and show column table
-        self.general_data_table.setVisible(True)
+        self.tableGeneralData.setVisible(True)
 
     def loadLogSamplePlot(self):
-        self.Log2_plotWidget.clear_plot()
-        self.missing_heatmap_widget.clear_plot()
-        self.data_types_widget.clear_plot()
-        self.correlation_widget.clear_plot()
-        
+        self.plotWidgetLog2.clear_plot()
+        self.plotWidgetMissingHeatmap.clear_plot()
+        self.plotWidgetDataTypes.clear_plot()
+        self.plotWidgetCorrelation.clear_plot()
+        if self.DfModel._df.empty:
+            return
+        self.plotWidgetDataTypes.plot_data_types_distribution(preprocessing_summary_perVariable(self.DfModel._df))
+        if self.DfSampleUmb._df.empty:
+            return
         # Process data for plottin for sample data
-        numeric_cols = self.DfSample._df.iloc[:, :].select_dtypes(include=np.number).columns
-        new_data = self.DfSample._df[numeric_cols]
+        numeric_cols = self.DfSampleUmb._df.iloc[:, :].select_dtypes(include=np.number).columns
+        new_data = self.DfSampleUmb._df[numeric_cols]
         mean_TIC = new_data.mean(axis=0) # Calculate mean along columns (axis=0)
-
         # Call the specific bar plot method on the correct PlotWidgetQC instance
-        self.Log2_plotWidget.plot_bar_chart(mean_TIC, new_data.columns, numeric_cols.shape[0])
+        self.plotWidgetLog2.plot_bar_chart(mean_TIC, new_data.columns, numeric_cols.shape[0])
 
-        self.missing_heatmap_widget.plot_missing_heatmap(self.DfSample._df)
-        self.data_types_widget.plot_data_types_distribution(preprocessing_summary_perVariable(self.DfModel._df))
-        self.correlation_widget.plot_correlation_matrix(self.DfSample._df)
-
+        self.plotWidgetMissingHeatmap.plot_missing_heatmap(self.DfSampleUmb._df)
+        self.plotWidgetCorrelation.plot_correlation_matrix(self.DfSampleUmb._df)
+        
         # Force layout update
         self.DFgrid.update()
-        self.df_tab.updateGeometry()
+        self.tabDf.updateGeometry()
 
     def onColumnDFClicked(self, column_index):
         # Get column name from index
@@ -484,7 +732,7 @@ class mainView(QMainWindow):
         #print(f"Column at index {column_index}: {col_name}")
 
         # Clear previous distribution plot
-        self.null_distribution_widget.clear_plot()
+        self.plotWidgetNullDistribution.clear_plot()
         
         # Create a DataFrame containing just this column
         cutDF = self.DfModel._df[[col_name]]
@@ -499,19 +747,65 @@ class mainView(QMainWindow):
         
         # Update the column table model
         self.colModel = PandasModel(transposed_df)
-        self.column_table.setModel(self.colModel)
+        self.tableColumn.setModel(self.colModel)
         
         # Adjust column table settings
-        self.column_table.verticalHeader().setVisible(True)
-        self.column_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tableColumn.verticalHeader().setVisible(True)
+        self.tableColumn.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         # Hide instruction and show column table
         self.titleColinfo.setVisible(True)
-        self.column_table.setVisible(True)
+        self.tableColumn.setVisible(True)
 
         self.old_column = col_name
 
-        self.null_distribution_widget.plot_null_pie(cutDF)
+        self.plotWidgetNullDistribution.plot_null_pie(cutDF)
+
+    def onColumnAnalysisClicked(self, column_index):
+        # Get column name from index
+        col_name = self.DfSampleUmb._df.columns[column_index]
+        if self.old_column == col_name:
+            return
+
+        # Clear previous distribution plot
+        self.plotWidgetNullDistributionAnalysis.clear_plot()
+        
+        # Create a DataFrame containing just this column
+        cutDF = self.DfSampleUmb._df[[col_name]]
+        # Create the preprocessing for just colDF
+        colDF = preprocessing_summary_perVariable(cutDF)
+        
+        # Create a transposed view for vertical display
+        transposed_df = colDF.T
+        
+        # Update the column table model
+        self.colModelAnalysis = PandasModel(transposed_df)
+        self.tableColumnAnalysis.setModel(self.colModelAnalysis)
+        
+        # Adjust column table settings
+        self.tableColumnAnalysis.verticalHeader().setVisible(True)
+        self.tableColumnAnalysis.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        # Hide instruction and show column table
+        self.titleColinfoAnalysis.setVisible(True)
+        self.tableColumnAnalysis.setVisible(True)
+
+        self.old_column = col_name
+
+        self.plotWidgetNullDistributionAnalysis.plot_null_pie(cutDF)
+
+    def onColumnDistributionClicked(self, column_index):
+        # Get column name from index
+        col_name = self.DfSampleUmb._df.columns[column_index]
+        
+        # Clear previous distribution plot
+        self.plotWidgetDistribution.clear_plot()
+
+        # Get the data series for the selected column
+        data_series = self.DfSampleUmb._df[col_name]
+
+        # Plot the distribution
+        self.plotWidgetDistribution.plot_distribution(data_series)
 
     def viewMetadataModel(self):
         if self.DfModel._df is None or self.DfModel._df.empty:
@@ -525,7 +819,23 @@ class mainView(QMainWindow):
             # Store the results
             self.DfMetadata._df = DfMetadata
             self.DfSample._df = DfSample
-            #self.DfModel._df = DfModel
+
+            self.DfSampleUmb._df = DfSample
+
+            # Update Samples Table view:
+            self.dfSampleTable.setModel(self.DfSampleUmb)
+            self.dfAnalysisTable.setModel(self.DfSampleUmb)
+            self.dfSampleTableOrig.setModel(self.DfSample)
+            self.dfSampleTableProc.setModel(self.DfSampleUmb)
+
+            # Reapply header settings (essential after model change)
+            header = self.dfSampleTable.horizontalHeader()
+            header.setSectionResizeMode(QHeaderView.Interactive)
+            header.setMinimumSectionSize(90)
+            header.setDefaultSectionSize(120)
+            header.setMaximumSectionSize(150)
+
+            print("Sample data successfully loaded and displayed")
 
             # Update the main model safely
             self.DfModel.beginResetModel()
@@ -533,6 +843,16 @@ class mainView(QMainWindow):
             self.DfModel.endResetModel()
 
             self.loadGeneralDataTable()
+
+            # Update Samples Table view:
+            self.dfSampleTable.setModel(self.DfSampleUmb)
+
+            # Reapply header settings (essential after model change)
+            header = self.dfSampleTable.horizontalHeader()
+            header.setSectionResizeMode(QHeaderView.Interactive)
+            header.setMinimumSectionSize(90)
+            header.setDefaultSectionSize(120)
+            header.setMaximumSectionSize(150)
             
             # Update UI plots
             self.loadLogSamplePlot()
@@ -543,8 +863,55 @@ class mainView(QMainWindow):
                                 f"Sample columns: {len(DfSample.columns)}\n"
                                 f"Original columns: {len(DfModel.columns)}")
 
+    def viewUmbralizationModel(self):
+        if self.DfSample._df.empty:
+            QMessageBox.warning(self, "No Data", "Please select the samples in the dataset!")
+            return
+        dialog = DialogUmbralModel(self.DfSample._df, self.DfSampleUmb._df, self)
+        if dialog.exec_() == QDialog.Accepted:
+            DfSample, DfSampleUmb = dialog.getResults()
+
+            # Update the umbralized model safely
+            self.DfSampleUmb.beginResetModel()
+            self.DfSampleUmb._df = DfSampleUmb
+            self.DfSampleUmb.endResetModel()
+
+            self.DfSample._df = DfSample
+
+            # Update UI plots
+            self.loadLogSamplePlot()
+
+            # Update table views
+            self.dfAnalysisTable.setModel(self.DfSampleUmb)
+            self.dfSampleTableProc.setModel(self.DfSampleUmb)
+            """
+            QMessageBox.information(self, "Success", 
+                                "Sample Data was umbralized")
+            """
+    
+    def viewImputationModel(self):
+        if self.DfSample._df.empty:
+            QMessageBox.warning(self, "No Data", "Please select the samples in the dataset!")
+            return
+        # Create and execute the dialog
+        dialog = DialogImputationModel(self.DfSample._df, self.DfSampleUmb._df, self)
+        # Check if the user clicked "OK"
+        if dialog.exec_() == QDialog.Accepted:
+            # Retrieve the imputed DataFrame from the dialog
+            imputed_df = dialog.getResults()
+            # Ensure the imputation was successful before updating
+            if imputed_df is not None:
+                # Update the model for the umbralized/imputed data
+                self.DfSampleUmb.beginResetModel()
+                self.DfSampleUmb._df = imputed_df
+                self.DfSampleUmb.endResetModel()
+
+                # Refresh the plots with the new data
+                self.loadLogSamplePlot()
+                print("Data imputation applied successfully")
+
     def resetOriginal(self):
-        if self.DfModel._df.empty:
+        if self.DfModel._df.empty and self.DfModel._df.equals(self.DfReset._df):
             QMessageBox.warning(self, "No Data", "Please load a dataset first!")
             return
         emptyDF = pd.DataFrame()
@@ -555,21 +922,21 @@ class mainView(QMainWindow):
 
         self.DfMetadata = PandasModel(emptyDF)
         self.DfSample = PandasModel(emptyDF)
+        self.DfSampleUmb = PandasModel(emptyDF)
 
-        self.Log2_plotWidget.clear_plot()
-        self.missing_heatmap_widget.clear_plot()
-        self.correlation_widget.clear_plot()
-        self.null_distribution_widget.clear_plot()
+        self.plotWidgetLog2.clear_plot()
+        self.plotWidgetMissingHeatmap.clear_plot()
+        self.plotWidgetCorrelation.clear_plot()
+        self.plotWidgetNullDistribution.clear_plot()
         self.titleColinfo.setVisible(False)
-        self.column_table.setVisible(False)
-        self.data_types_widget.plot_data_types_distribution(preprocessing_summary_perVariable(self.DfModel._df))
+        self.tableColumn.setVisible(False)
+        self.plotWidgetDataTypes.plot_data_types_distribution(preprocessing_summary_perVariable(self.DfModel._df))
         self.loadGeneralDataTable()
 
         self.old_column = ""
 
         QMessageBox.information(self, "Success", 
                                 "Model restored to it's original data!")
-
 
     def logout(self):
         self.close()
