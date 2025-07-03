@@ -1,14 +1,54 @@
-# Installation and use:
+# Installation and use
 
-## Create a virtual environment to allocate proyect:
+This guide will walk you through setting up and running the project on your local machine.
 
+## 1. Clone the Repository
+
+First, clone the repository to your local machine using Git:
+
+```sh
+git clone https://github.com/Pixelguy14/UI_AG_python
+cd UI_AG_python
+```
+
+Alternatively, you can download the source code as a ZIP file from the [repository page](https://github.com/Pixelguy14/UI_AG_python).
+
+## 2. Create and Activate a Virtual Environment
+
+It's best practice to use a virtual environment to keep project dependencies isolated.
+
+Create the virtual environment:
+```sh
 python3 -m venv GUI_AG
-### For Linux:
+```
+
+Now, activate it. The command varies based on your operating system:
+
+### For macOS and Linux:
+```sh
 source GUI_AG/bin/activate
+```
+
 ### For Windows:
+In Command Prompt:
+```cmd
+GUI_AG\Scripts\activate.bat
+```
+In PowerShell:
+```powershell
+GUI_AG\Scripts\Activate.ps1
+```
 
-## Install proyect dependencies:
+## 3. Install Dependencies
+
+With the virtual environment active, install the necessary packages:
+```sh
 pip install -r src/utils/requirements.txt
+```
 
-## Run proyect:
+## 4. Run the Project
+
+You can now launch the application:
+```sh
 python main.py
+```

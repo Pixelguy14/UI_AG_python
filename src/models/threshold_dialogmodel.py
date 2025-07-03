@@ -1,32 +1,19 @@
-from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget,
-                            QTableView, QHeaderView, QToolBar, QAction, QDialog, QFormLayout,
-                            QLineEdit, QDateEdit, QComboBox, QMessageBox, QLabel, QSplitter,
-                            QDialogButtonBox, QApplication, QFrame, QGridLayout, QSizePolicy,
-                            QStackedWidget, QSpinBox, QTableWidget, QTableWidgetItem, QSlider)
-from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex, QDate, QSize
-from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor
-from PyQt5.QtSql import QSqlDatabase, QSqlQuery, QSqlTableModel, QSqlQueryModel
-from datetime import datetime
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from PyQt5 import QtCore
-import pandas as pd
-import sys
+from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QDialog, QMessageBox, QLabel, QDialogButtonBox, QSlider
+from PyQt5.QtCore import Qt
 import math
 
-## QDialog with a slider to select % of umbralization
-class DialogUmbralModel(QDialog):
-    def __init__(self, dfS, dfSU, parent=None):
+## QDialog with a slider to select % of threshold
+class DialogThresholdingModel(QDialog):
+    def __init__(self, dfS, dfST, parent=None):
         super().__init__(parent)
         self.dfS = dfS # Dataframe containing sample data
-        self.dfSU = dfSU # Dataframe to store the umbralized sample data
+        self.dfST = dfST # Dataframe to store the thresholded sample data
 
-        self.setWindowTitle("Sample Umbralization")
+        self.setWindowTitle("Sample Thresholding")
         self.setMinimumSize(400, 250)
         self.initUI()
         
-        # Initialize current_umbral_percentage
-        self.current_umbral_percentage = 80
+        self.curr_thresh_perc = 80
 
     def initUI(self):
         main_layout = QVBoxLayout()
@@ -34,7 +21,7 @@ class DialogUmbralModel(QDialog):
         main_layout.setSpacing(15)
 
         # Title
-        title_label = QLabel("Select Umbralization Percentage")
+        title_label = QLabel("Select Thresholding Percentage")
         title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
         title_label.setAlignment(Qt.AlignCenter) # Center the title
         main_layout.addWidget(title_label)
@@ -98,9 +85,9 @@ class DialogUmbralModel(QDialog):
         action_buttons_layout.setSpacing(10)
         action_buttons_layout.addStretch(1) # Push buttons to the right
 
-        # Confirm Umbralization button
-        btnConfirm = QPushButton("Apply Umbralization")
-        btnConfirm.clicked.connect(self.confirmUmbralization)
+        # Confirm Thresholding button
+        btnConfirm = QPushButton("Apply Thresholding")
+        btnConfirm.clicked.connect(self.confirmThresholding)
         btnConfirm.setStyleSheet("""
             QPushButton {
                 background-color: #35dc59;
@@ -115,10 +102,10 @@ class DialogUmbralModel(QDialog):
         """)
         action_buttons_layout.addWidget(btnConfirm)
 
-        # Revert Umbralization button
-        btnRevertUmbralization = QPushButton("Revert to Original")
-        btnRevertUmbralization.clicked.connect(self.revertUmbralization)
-        btnRevertUmbralization.setStyleSheet("""
+        # Revert Thresholding button
+        btnRevertThresholding = QPushButton("Revert to Original")
+        btnRevertThresholding.clicked.connect(self.revertThresholding)
+        btnRevertThresholding.setStyleSheet("""
             QPushButton {
                 background-color: #e74c3c; /* Red for revert */
                 color: white;
@@ -130,7 +117,7 @@ class DialogUmbralModel(QDialog):
                 background-color: #c0392b;
             }
         """)
-        action_buttons_layout.addWidget(btnRevertUmbralization)
+        action_buttons_layout.addWidget(btnRevertThresholding)
         action_buttons_layout.addStretch(1) # Push buttons to the left
 
         main_layout.addLayout(action_buttons_layout)
@@ -162,14 +149,14 @@ class DialogUmbralModel(QDialog):
         self.setLayout(main_layout)
 
     def updatePercentageLabel(self, value):
-        self.current_umbral_percentage = value
+        self.curr_thresh_perc = value
         self.percentage_label.setText(f"{value}%")
 
-    def confirmUmbralization(self):
+    def confirmThresholding(self):
         reply = QMessageBox.warning(
             self,
-            "Confirm Umbralization",
-            "Applying umbralization will modify the sample data.\nDo you want to proceed?",
+            "Confirm Thresholding",
+            "Applying thresholding will modify the sample data.\nDo you want to proceed?",
             QMessageBox.Yes | QMessageBox.No
         )
 
@@ -178,24 +165,24 @@ class DialogUmbralModel(QDialog):
             num_columns = len(self.dfS.columns)
             # Ensure at least 1 column is considered if percentage is > 0 and num_columns > 0
             if num_columns > 0:
-                threshold = math.ceil((self.current_umbral_percentage / 100.0) * num_columns)
-                if self.current_umbral_percentage > 0 and threshold == 0:
+                threshold = math.ceil((self.curr_thresh_perc / 100.0) * num_columns)
+                if self.curr_thresh_perc > 0 and threshold == 0:
                     threshold = 1
             else:
-                threshold = 0 # No columns to umbralize
+                threshold = 0 # No columns to threshold
 
-            self.dfSU = self.dfS.dropna(thresh=threshold)
+            self.dfST = self.dfS.dropna(thresh=threshold)
 
-            QMessageBox.information(self, "Umbralization Applied", "Sample data has been umbralized successfully.")
-            print(f"Sample Data Umbralized with {self.current_umbral_percentage}% threshold.")
-            print(f"Original shape: {self.dfS.shape}, Umbralized shape: {self.dfSU.shape}")
+            QMessageBox.information(self, "Thresholding Applied", "Sample data has been thresholded successfully.")
+            print(f"Sample Data thresholded with {self.curr_thresh_perc}% threshold.")
+            print(f"Original shape: {self.dfS.shape}, thresholded shape: {self.dfST.shape}")
             
             self.accept() # Close the dialog with accepted status
 
         else:
-            QMessageBox.information(self, "Umbralization Cancelled", "Umbralization was not applied.")
+            QMessageBox.information(self, "Thresholding Cancelled", "Thresholding was not applied.")
 
-    def revertUmbralization(self):
+    def revertThresholding(self):
         reply = QMessageBox.warning(
             self,
             "Confirm Revert",
@@ -204,7 +191,7 @@ class DialogUmbralModel(QDialog):
         )
 
         if reply == QMessageBox.Yes:
-            self.dfSU = self.dfS.copy()
+            self.dfST = self.dfS.copy()
             QMessageBox.information(self, "Reverted", "Sample data has been reverted to its original state.")
             print("Sample Data Reverted to Original.")
         else:
@@ -212,24 +199,4 @@ class DialogUmbralModel(QDialog):
 
 
     def getResults(self):
-        return self.dfS, self.dfSU
-
-"""
-## QDialog to select imputation methods.
-class DialogImputationModel(QDialog):
-    def __init__(self, dfS, dfSU, parent=None):
-        super().__init__(parent)
-        self.dfS = dfS # Dataframe containing sample data
-        self.dfSU = dfSU # Dataframe to store the umbralized sample data
-
-        self.setWindowTitle("Sample Imputation")
-        self.setMinimumSize(400, 250)
-        self.initUI()
-
-    def initUI(self):
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(15)
-
-        self.setLayout(main_layout)
-"""
+        return self.dfS, self.dfST

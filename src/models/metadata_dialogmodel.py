@@ -66,7 +66,7 @@ class DialogMetadataModel(QDialog):
             
             # Type combo box
             type_combo = QComboBox()
-            type_combo.addItems(["undefined", "metadata", "sample"])
+            type_combo.addItems(["undefined", "metadata", "sample", "class"])
             detected_type = "undefined"
             if col_name in set_listMeta:
                 detected_type = "metadata"
@@ -74,7 +74,6 @@ class DialogMetadataModel(QDialog):
                 detected_type = "sample"
             self.assignments[col_name] = detected_type
             type_combo.setCurrentText(detected_type)
-            #type_combo.setCurrentText(self.assignments[col_name])
             type_combo.currentTextChanged.connect(
                 lambda text, c=col_name: self.updateAssignment(c, text)
             )

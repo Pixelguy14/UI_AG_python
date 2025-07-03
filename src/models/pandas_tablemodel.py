@@ -1,15 +1,5 @@
-from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
-                            QTableView, QHeaderView, QToolBar, QAction, QDialog, QFormLayout, 
-                            QLineEdit, QDateEdit, QComboBox, QMessageBox, QLabel, QSplitter,
-                            QDialogButtonBox, QApplication, QFrame, QGridLayout, QSizePolicy, 
-                            QStackedWidget, QSpinBox)
-from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex, QDate, QSize
-from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor
-from PyQt5.QtSql import QSqlDatabase, QSqlQuery, QSqlTableModel, QSqlQueryModel
-from datetime import datetime
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from matplotlib.colors import ListedColormap
+from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex
+from PyQt5.QtGui import QFont
 from PyQt5 import QtCore
 import pandas as pd
 from src.functions.exploratory_data import *
@@ -167,3 +157,124 @@ class PandasModel(QAbstractTableModel):
 
         # Emit layoutChanged to ensure views are fully updated after multiple removals
         self.layoutChanged.emit()
+
+# PyQT model that manages rows and columns in a pandas Dataframe, focusing on rows (transposed view)
+class PandasModelRows(QAbstractTableModel):
+    def __init__(self, df=pd.DataFrame(), parent=None, decimals=4, italic_cols=None):
+        QAbstractTableModel.__init__(self, parent=parent)
+        self._df = df.copy()
+        # Italic_cols refers to columns in the original DataFrame, which are rows in this view.
+        self._italic_columns = set(italic_cols) if italic_cols else set()
+        self._decimal_places = decimals
+
+    def toDataFrame(self):
+        return self._df.copy()
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            if orientation == Qt.Horizontal:
+                if section < self.columnCount():
+                    return str(self._df.index[section])
+                return None
+            elif orientation == Qt.Vertical:
+                if section < self.rowCount():
+                    return self._df.columns[section]
+                return None
+        elif role == Qt.FontRole:
+            if orientation == Qt.Vertical: # Italic rows (original columns)
+                if section < self.rowCount():
+                    col_name = self._df.columns[section]
+                    if col_name in self._italic_columns:
+                        font = QFont()
+                        font.setItalic(True)
+                        return font
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if not index.isValid() or self._df.empty:
+            return QtCore.QVariant()
+
+        row = index.row()
+        col = index.column()
+
+        if row >= self.rowCount() or col >= self.columnCount():
+            return None
+
+        if role == Qt.DisplayRole:
+            try:
+                # Transposed access: view row is df col, view col is df row
+                value = self._df.iloc[col, row]
+
+                if isinstance(value, (int, float)):
+                    if (value != 0 and (abs(value) < 0.001 or abs(value) >= 10000)):
+                        return QtCore.QVariant(f"{value:.{self._decimal_places}e}")
+                    else:
+                        return QtCore.QVariant(f"{value:.{self._decimal_places}f}")
+                else:
+                    return QtCore.QVariant(str(value))
+
+            except Exception as e:
+                print(f"Error getting table data: {e}")
+                return QtCore.QVariant()
+        return QtCore.QVariant()
+
+    def setData(self, index, value, role):
+        if not index.isValid():
+            return False
+
+        view_row = index.row()
+        view_col = index.column()
+
+        if view_row >= self.rowCount() or view_col >= self.columnCount():
+            return False
+
+        df_row_label = self._df.index[view_col]
+        df_col_label = self._df.columns[view_row]
+
+        if hasattr(value, 'toPyObject'):
+            value = value.toPyObject()
+        else:
+            dtype = self._df[df_col_label].dtype
+            if dtype != object:
+                try:
+                    value = None if value == '' else dtype.type(value)
+                except ValueError:
+                    print(f"Warning: Could not convert '{value}' to {dtype} for column '{df_col_label}'")
+                    return False
+        
+        self._df.loc[df_row_label, df_col_label] = value
+        self.dataChanged.emit(index, index, [role])
+        return True
+
+    def rowCount(self, parent=QModelIndex()):
+        return len(self._df.columns) if self._df is not None else 0
+
+    def columnCount(self, parent=QModelIndex()):
+        return len(self._df.index) if self._df is not None else 0
+
+    def sort(self, column, order):
+        if self._df.empty:
+            return
+        
+        # 'column' is the view's column index, which corresponds to a row in the DataFrame.
+        # We sort the DataFrame's columns based on the values in that row.
+        row_label = self._df.index[column]
+        
+        self.layoutAboutToBeChanged.emit()
+        
+        try:
+            # Transpose, sort by the row (which is now a column), then transpose back.
+            T_df = self._df.T
+            T_df.sort_values(by=row_label, ascending=(order == Qt.AscendingOrder), inplace=True)
+            self._df = T_df.T
+        except Exception as e:
+            print(f"Error sorting: {e}")
+
+        self.layoutChanged.emit()
+
+    def reset_model(self, new_data):
+        """Completely reset the model with new data"""
+        self.beginResetModel()
+        self._df = new_data.copy()
+        self._italic_columns = set()
+        self.endResetModel()

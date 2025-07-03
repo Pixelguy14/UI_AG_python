@@ -1,4 +1,6 @@
 from src.functions.imputation_methods import *
+import os
+import pyopenms as oms
 
 consensus_map = oms.ConsensusMap()
 oms.ConsensusXMLFile().load("/home/pixel/Documents/Cinvestav_2025/UI_Analisis_Genomico/Consensus/normalized.consensusXML", consensus_map)
@@ -65,8 +67,8 @@ df_scaled = (df - df.mean()) / df.std()
 #df_imputed = missForestImputed(df_scaled).pipe(postprocess_imputation, df)
 #df_imputed = svdImputed(df_scaled).pipe(postprocess_imputation, df)
 #df_imputed = knnImputed(df_scaled).pipe(postprocess_imputation, df)
-#df_imputed = miceLinearRegressionImputed(df_scaled).pipe(postprocess_imputation, df)
-df_imputed = miceBayesianRidgeImputed(df_scaled).pipe(postprocess_imputation, df)
+df_imputed = miceLinearRegressionImputed(df_scaled).pipe(postprocess_imputation, df)
+#df_imputed = miceBayesianRidgeImputed(df_scaled).pipe(postprocess_imputation, df)
 
 print("\nDataFrame after imputation:")
 print(df_imputed)

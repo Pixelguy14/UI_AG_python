@@ -1,19 +1,17 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, QDialogButtonBox, 
                             QSpinBox, QLabel, QFrame, QMessageBox, QDoubleSpinBox)
-from PyQt5.QtCore import Qt
-import pandas as pd
-
 from src.functions.imputation_methods import *
 
 class DialogImputationModel(QDialog):
-    def __init__(self, df_sample, df_sample_umb, parent=None):
+    def __init__(self, df_sample, df_sample_thd, df_sample_imp, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Imputation Methods")
         self.setMinimumSize(300, 250)
 
         # Store the dataframes
         self.df_sample = df_sample
-        self.df_sample_umb = df_sample_umb
+        self.df_sample_thd = df_sample_thd
+        self.df_sample_imp = df_sample_imp
         self.imputed_df = None # To store the result
 
         # --- UI Elements ---
@@ -70,7 +68,7 @@ class DialogImputationModel(QDialog):
         # MICE
         self.mice_iter_spinbox = QSpinBox()
         self.mice_iter_spinbox.setRange(1, 100)
-        self.mice_iter_spinbox.setValue(10)
+        self.mice_iter_spinbox.setValue(20)
 
         # Dialog buttons
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -103,8 +101,8 @@ class DialogImputationModel(QDialog):
             "Miss Forest Imputation": "A non-parametric, iterative method that uses random forests to predict and impute missing values. For each feature with missing values, it builds a random forest model using other features as predictors. This process is repeated until the imputed values converge. Highly effective for MAR and can also handle complex MNAR scenarios reasonably well, especially when the missingness pattern can be inferred from other observed data. ",
             "SVD Imputation": "Uses matrix factorization (Singular Value Decomposition) to approximate the data matrix and impute missing values. It identifies underlying linear relationships and latent components in the data to estimate missing entries. Particularly well-suited for MAR data, especially after data normalization and variance-stabilizing transformations (e.g., logarithmization), which can linearize relationships. Modern iterative implementations are more robust and can handle MNAR data better by treating low-intensity missing values differently or by incorporating implicit assumptions about left-censoring.",
             "KNN Imputation": "Imputes missing values by finding the 'k' nearest neighbors (based on a distance metric) to a sample with missing values and then averaging (or taking the median) the observed values from those neighbors for the missing feature. Suitable for MAR data, especially at low to moderate missingness (typically <15-20%). It assumes that similar samples have similar molecular profiles.",
-            "MICE (Bayesian Ridge)": "A powerful, flexible framework that generates multiple imputed datasets. It works by performing a series of regression models, where each missing variable is imputed conditional on other variables in the dataset. Theoretically superior for statistical inference as it accounts for the uncertainty introduced by imputation by generating multiple plausible imputed datasets. This is valuable for downstream statistical analysis where proper variance estimation is critical.",
-            "MICE (Linear Regression)": "A powerful, flexible framework that generates multiple imputed datasets. It works by performing a series of regression models, where each missing variable is imputed conditional on other variables in the dataset. Theoretically superior for statistical inference as it accounts for the uncertainty introduced by imputation by generating multiple plausible imputed datasets. This is valuable for downstream statistical analysis where proper variance estimation is critical.y"
+            "MICE (Bayesian Ridge)": "Imputes missing values using the MICE (Multivariate Imputation by Chained Equations) algorithm with a Bayesian Ridge regression model. This method is well-suited for complex, high-dimensional omics data. The process involves a log transformation to handle skewed data distributions, followed by iterative imputation where each feature is predicted based on the others. The Bayesian Ridge estimator provides regularization, making the imputation more stable and robust, especially in cases of multicollinearity. Data is then back-transformed to its original scale,ensuring that imputed values are non-negative.",
+            "MICE (Linear Regression)": "Imputes missing values using the MICE (Multivariate Imputation by Chained Equations) algorithm with a standard Linear Regression model. This approach iteratively models each feature with missing values as a function of the other features. To better suit omics data, the method first applies a log transformation to handle skewed distributions. After the iterative imputation, the data is transformed back to its original scale, and a non-negativity constraint is applied to ensure realistic values for measurements."
         }
 
         self.description_label.setText(descriptions.get(method, ""))
@@ -112,7 +110,7 @@ class DialogImputationModel(QDialog):
         if method == "N Imputation":
             self.options_layout.addRow(QLabel("N Value:"), self.n_spinbox)
         elif method == "Miss Forest Imputation":
-            self.options_layout.addRow(QLabel("Max Iterations:"), self.miss_forest_iter_spinbox)
+            self.options_layout.addRow(QLabel("Max Iteration Limit:"), self.miss_forest_iter_spinbox)
             self.options_layout.addRow(QLabel("N Estimators:"), self.miss_forest_estimators_spinbox)
         elif method == "SVD Imputation":
             self.options_layout.addRow(QLabel("N Components:"), self.svd_components_spinbox)
@@ -122,8 +120,12 @@ class DialogImputationModel(QDialog):
             self.options_layout.addRow(QLabel("Max Iterations:"), self.mice_iter_spinbox)
 
     def apply_imputation(self):
+        if self.df_sample_imp.empty:
+            self.df_sample_imp = self.df_sample_thd
+        else:
+            self.df_sample_thd = self.df_sample_imp # Restore the dataframe to the one before imputation 
         method = self.method_combo.currentText()
-        ###df_to_impute = self.df_sample_umb.copy() # WIP
+        df_to_impute = self.df_sample_thd.copy()
         
         try:
             # Always scale before imputation for advanced methods
@@ -153,11 +155,11 @@ class DialogImputationModel(QDialog):
             elif method == "MICE (Bayesian Ridge)":
                 max_iter = self.mice_iter_spinbox.value()
                 #self.imputed_df = miceBayesianRidgeImputed(df_to_impute, max_iter=max_iter)
-                self.imputed_df = miceBayesianRidgeImputed(df_to_impute, max_iter=max_iter).pipe(postprocess_imputation, df_to_impute)
+                self.imputed_df = miceBayesianRidgeImputed(df_scaled, max_iter=max_iter).pipe(postprocess_imputation, df_to_impute)
             elif method == "MICE (Linear Regression)":
                 max_iter = self.mice_iter_spinbox.value()
                 #self.imputed_df = miceLinearRegressionImputed(df_to_impute, max_iter=max_iter)
-                self.imputed_df = miceLinearRegressionImputed(df_to_impute, max_iter=max_iter).pipe(postprocess_imputation, df_to_impute)
+                self.imputed_df = miceLinearRegressionImputed(df_scaled, max_iter=max_iter).pipe(postprocess_imputation, df_to_impute)
             
             QMessageBox.information(self, "Success", f"Imputation with {method} completed successfully.")
             self.accept()
@@ -166,4 +168,4 @@ class DialogImputationModel(QDialog):
             self.imputed_df = None
 
     def getResults(self):
-        return self.imputed_df
+        return self.df_sample_imp, self.imputed_df

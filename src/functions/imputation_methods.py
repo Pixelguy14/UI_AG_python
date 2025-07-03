@@ -1,15 +1,7 @@
-from matplotlib.figure import Figure
-import pyopenms as oms
 import pandas as pd
-import math
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
-from scipy import stats
-from statsmodels.sandbox.stats.multicomp import multipletests
 from sklearn.impute import KNNImputer
-from sklearn.experimental import enable_iterative_imputer
+from sklearn.experimental import enable_iterative_imputer # Has to stay in order for IterativeImputer to work
 from sklearn.impute import IterativeImputer
 from missingpy import MissForest
 from sklearn.preprocessing import StandardScaler
@@ -179,78 +171,55 @@ def knnImputed(df,n_neighbors=2):
 
 # NOT USING QRILC = Quantile Regression Imputation of Left-Censored data
 # MICE with bayesian ridge 
-def miceBayesianRidgeImputed(df, max_iter=10, random_state=None, initial_strategy='mean', min_value_for_log=1e-9):
+def miceBayesianRidgeImputed(df, max_iter=20, random_state=None, initial_strategy='mean', tol=1e-3):
     # initial_strategy: 'mean', 'median', 'most_frequent', or 'constant'
     df_imputed = df.copy()
     num_cols = df_imputed.select_dtypes(include=np.number).columns
-
+    
     if num_cols.empty:
         return df_imputed
-
+    
     df_num = df_imputed[num_cols]
-
-    # Apply log transformation (add a small constant to handle zeros or very small values)
-    # This is critical for data that is positive-skewed or left-censored, typical in metabolomics
-    df_log_transformed = np.log(df_num + min_value_for_log)
-
-    # Initialize IterativeImputer with BayesianRidge as the estimator
+    
     imputer = IterativeImputer(
         estimator=BayesianRidge(),
         max_iter=max_iter,
         random_state=random_state,
         initial_strategy=initial_strategy,
-        add_indicator=False # Do not add a binary indicator column for imputed values
+        add_indicator=False,
+        tol=tol
     )
-
-    # Fit and transform the log-transformed data
-    imputed_log_array = imputer.fit_transform(df_log_transformed)
-
-    # Inverse log transform
-    imputed_original_scale = np.exp(imputed_log_array) - min_value_for_log
     
-    # Post-hoc adjustment: ensure no imputed values are negative if original data is non-negative
-    # This is important for concentration data where values cannot be less than zero.
-    imputed_original_scale[imputed_original_scale < 0] = 0
-
-    # Update the numerical columns in the copied DataFrame
-    df_imputed[num_cols] = pd.DataFrame(imputed_original_scale, columns=num_cols, index=df_num.index)
-
+    imputed_array = imputer.fit_transform(df_num)
+    
+    df_imputed[num_cols] = pd.DataFrame(imputed_array, columns=num_cols, index=df_num.index)
+    
     return df_imputed
 
 # MICE with linear regresion
-def miceLinearRegressionImputed(df, max_iter=10, random_state=None, initial_strategy='mean', min_value_for_log=1e-9):
+def miceLinearRegressionImputed(df, max_iter=20, random_state=None, initial_strategy='mean', tol=1e-3):
     # initial_strategy: 'mean', 'median', 'most_frequent', or 'constant'
     df_imputed = df.copy()
     num_cols = df_imputed.select_dtypes(include=np.number).columns
-
+    
     if num_cols.empty:
         return df_imputed
-
+    
     df_num = df_imputed[num_cols]
-
-    # Apply log transformation (add a small constant to handle zeros or very small values)
-    df_log_transformed = np.log(df_num + min_value_for_log)
-
-    # Initialize IterativeImputer with LinearRegression as the estimator
+    
     imputer = IterativeImputer(
         estimator=LinearRegression(),
         max_iter=max_iter,
         random_state=random_state,
         initial_strategy=initial_strategy,
-        add_indicator=False
+        add_indicator=False,
+        tol=tol
     )
-
-    # Fit and transform the log-transformed data
-    imputed_log_array = imputer.fit_transform(df_log_transformed)
-
-    # Inverse log transform
-    imputed_original_scale = np.exp(imputed_log_array) - min_value_for_log
-
-    # Post-hoc adjustment: ensure no imputed values are negative if original data is non-negative
-    imputed_original_scale[imputed_original_scale < 0] = 0
-
-    # Update the numerical columns in the copied DataFrame
-    df_imputed[num_cols] = pd.DataFrame(imputed_original_scale, columns=num_cols, index=df_num.index)
+    
+    imputed_array = imputer.fit_transform(df_num)
+    
+    # Create DataFrame for imputed values
+    df_imputed[num_cols] = pd.DataFrame(imputed_array, columns=num_cols, index=df_num.index)
 
     return df_imputed
 

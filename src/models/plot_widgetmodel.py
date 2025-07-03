@@ -1,18 +1,9 @@
-from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, 
-                            QTableView, QHeaderView, QToolBar, QAction, QDialog, QFormLayout, 
-                            QLineEdit, QDateEdit, QComboBox, QMessageBox, QLabel, QSplitter,
-                            QDialogButtonBox, QApplication, QFrame, QGridLayout, QSizePolicy, 
-                            QStackedWidget, QSpinBox)
-from PyQt5.QtCore import Qt, QAbstractTableModel, QModelIndex, QDate, QSize
-from PyQt5.QtGui import QPixmap, QIcon, QFont, QColor
-from PyQt5.QtSql import QSqlDatabase, QSqlQuery, QSqlTableModel, QSqlQueryModel
-from datetime import datetime
+from PyQt5.QtWidgets import QVBoxLayout, QWidget
 from scipy.stats import norm, gaussian_kde
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.colors import ListedColormap
-from PyQt5 import QtCore
-import pandas as pd
+import seaborn as sns
 from src.functions.exploratory_data import *
 
 # Plot prototype for Quality Control models
@@ -204,7 +195,7 @@ class PlotWidgetQC(QWidget):
         kde = gaussian_kde(clean_data)
         xmin, xmax = clean_data.min(), clean_data.max()
         x = np.linspace(xmin, xmax, 500)
-        ax.plot(x, kde(x), 'r-', linewidth=2, label='Kernel Density')
+        #ax.plot(x, kde(x), 'r-', linewidth=2, label='Kernel Density')
         
         # Overlay normal distribution
         mu, std = clean_data.mean(), clean_data.std()
