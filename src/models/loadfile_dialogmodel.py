@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QPushButton, QVBoxLayout, QMessageBox, QDialog, QLabel, 
-                             QRadioButton, QButtonGroup, QGroupBox, QTableView, QHBoxLayout,
-                             QDialogButtonBox, QHeaderView, QFrame)
+                             QRadioButton, QButtonGroup, QGroupBox, QTableView,
+                             QDialogButtonBox, QFrame)
 from PyQt5.QtCore import Qt
 import xdialog
 import os
@@ -12,7 +12,6 @@ class DialogLoadFileModel(QDialog):
         super().__init__(parent)
         self.df = None
         self.mainIdentifier = False  # false = cols, true = rows
-        self.mainHandler = False    # false = vertical, true = horizontal
         self.setWindowTitle("Load and handle Dataset")
         self.setMinimumSize(1200, 600)
         self.initUI()
@@ -40,18 +39,18 @@ class DialogLoadFileModel(QDialog):
         main_layout.addWidget(separator)
 
         # Identifier selection
-        identifier_group = QGroupBox("Select where are your Identifiers")
+        identifier_group = QGroupBox("Select your Samples location")
         identifier_layout = QVBoxLayout(identifier_group)
         
-        instruction_label = QLabel("Are the main identifiers (e.g., sample names) in columns or rows?")
+        instruction_label = QLabel("Are the Samples located in columns or rows?")
         instruction_label.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
         instruction_label.setAlignment(Qt.AlignCenter)
         identifier_layout.addWidget(instruction_label)
         
         # Radio buttons for identifier position
         self.identifier_group = QButtonGroup(self)
-        self.btnCols = QRadioButton("Columns (identifiers as column headers)")
-        self.btnRows = QRadioButton("Rows (identifiers as row names)")
+        self.btnCols = QRadioButton("Columns (samples as columns, features as rows)")
+        self.btnRows = QRadioButton("Rows (samples as rows, features as columns)")
         self.btnCols.setChecked(True)
         
         self.identifier_group.addButton(self.btnCols, 0)
@@ -59,41 +58,25 @@ class DialogLoadFileModel(QDialog):
         
         identifier_layout.addWidget(self.btnCols)
         identifier_layout.addWidget(self.btnRows)
-        main_layout.addWidget(identifier_group)
 
-        # Handler selection
-        handler_group = QGroupBox("Dataset Handling Orientation")
-        handler_layout = QVBoxLayout(handler_group)
-        
-        instruction_label2 = QLabel("Do you want to handle your dataset Vertically or Horizontally? (This will transpose your dataset if the identifiers have the oposite orientation)")
+        instruction_label2 = QLabel("(This will transpose your dataset if the samples are set as rows)")
         instruction_label2.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
         instruction_label2.setAlignment(Qt.AlignCenter)
-        handler_layout.addWidget(instruction_label2)
-        
-        # Radio buttons for dataset handling
-        self.handler_group = QButtonGroup(self)
-        self.btnVertical = QRadioButton("Vertical (samples as rows, features as columns)")
-        self.btnHorizontal = QRadioButton("Horizontal (samples as columns, features as rows)")
-        self.btnVertical.setChecked(True)
-        
-        self.handler_group.addButton(self.btnVertical, 0)
-        self.handler_group.addButton(self.btnHorizontal, 1)
-        
-        handler_layout.addWidget(self.btnVertical)
-        handler_layout.addWidget(self.btnHorizontal)
-        main_layout.addWidget(handler_group)
+        identifier_layout.addWidget(instruction_label2)
+
+        main_layout.addWidget(identifier_group)
 
         # Preview table
         preview_label = QLabel("Data Preview:")
         preview_label.setStyleSheet("font-weight: bold;")
         main_layout.addWidget(preview_label)
         
+        # Preview Table
         self.preview_table = QTableView()
         self.preview_table.setAlternatingRowColors(True)
         self.preview_table.setEditTriggers(QTableView.NoEditTriggers)
-        self.preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.preview_table.verticalHeader().setVisible(False)
-        self.preview_table.setMaximumHeight(200)
+
+        # Table behavior
         main_layout.addWidget(self.preview_table)
 
         # Button box
@@ -113,8 +96,7 @@ class DialogLoadFileModel(QDialog):
                 ("Feature XML Files", "*.featureXML"),
                 ("XML Files", "*.xml"),
                 ("Tab-Separated Values", "*.tsv"),
-                ("Comma-Separated Values", "*.csv"),
-                ("Excel files", "*.xlsx;*.xls")
+                ("Comma-Separated Values", "*.csv")
             ],
             multiple=False,
         )
@@ -144,16 +126,14 @@ class DialogLoadFileModel(QDialog):
     def accept(self):
         # Get selected options
         self.mainIdentifier = bool(self.identifier_group.checkedId())  # 0 = cols, 1 = rows
-        self.mainHandler = bool(self.handler_group.checkedId())       # 0 = vertical, 1 = horizontal
         
         # Apply orientation changes if needed
-        if self.mainIdentifier != self.mainHandler:
-            # If identifiers are in rows but we want vertical handling, transpose
-            # Or if identifiers are in columns but we want horizontal handling, transpose
+        if self.mainIdentifier != 0:
+            # we want samples as columns, features as rows
             self.df = self.df.T
-            print("Data transposed to match orientation")
-            
+            print("Data transposed to match the interface orientation")
         super().accept()
+        #print(self.df.head(10))
 
     def getResults(self):
-        return self.df, self.mainIdentifier, self.mainHandler
+        return self.df

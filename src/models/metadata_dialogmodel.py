@@ -66,7 +66,7 @@ class DialogMetadataModel(QDialog):
             
             # Type combo box
             type_combo = QComboBox()
-            type_combo.addItems(["undefined", "metadata", "sample", "class"])
+            type_combo.addItems(["undefined", "metadata", "sample"])
             detected_type = "undefined"
             if col_name in set_listMeta:
                 detected_type = "metadata"

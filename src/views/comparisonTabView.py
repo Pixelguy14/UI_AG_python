@@ -6,12 +6,13 @@ def setupComparisonTab(self):
 
     # Create a vertical layout for the first table section
     verticalBoxLayout1 = QVBoxLayout()
-    
+
     # Title
     title1 = QLabel("Original Sample DataFrame")
-    title1.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
+    title1.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; " \
+                         "padding: 5px;")
     verticalBoxLayout1.addWidget(title1)
-    
+
     # Original Sample DataFrame table
     self.DfSample = PandasModel()
     self.dfSampleTableOrig = QTableView()
@@ -24,12 +25,12 @@ def setupComparisonTab(self):
 
     # Create a vertical layout for the second table section
     verticalBoxLayout2 = QVBoxLayout()
-    
+
     # Title
     title2 = QLabel("Processed Sample DataFrame")
     title2.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
     verticalBoxLayout2.addWidget(title2)
-    
+
     # Processed Sample DataFrame table
     self.DfSampleThd = PandasModel()
     self.dfSampleTableProc = QTableView()

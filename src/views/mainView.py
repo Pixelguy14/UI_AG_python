@@ -5,11 +5,11 @@ import pandas as pd
 import numpy as np
 import os
 
-from src.functions.exploratory_data import loadFile, preprocessing_general_dataset_statistics, preprocessing_summary_perVariable
+from src.functions.exploratory_data import preprocessing_general_dataset_statistics, preprocessing_summary_perVariable
 from src.models.metadata_dialogmodel import DialogMetadataModel
 from src.models.imputation_dialogmodel import DialogImputationModel
 from src.models.threshold_dialogmodel import DialogThresholdingModel
-from src.models.pandas_tablemodel import PandasModel, PandasModelRows
+from src.models.pandas_tablemodel import PandasModel
 from src.models.loadfile_dialogmodel import DialogLoadFileModel
 from src.views.summaryTabView import setupSummaryTab
 from src.views.dataframeTabView import setupDFTab
@@ -31,9 +31,6 @@ class mainView(QMainWindow):
         self.DfSampleImp = PandasModel(emptyDF) # Model of the imputed sample data
 
         self.DfReset = PandasModel(emptyDF) # Incase you'll want to reset the Df to before any changes.
-
-        self.mainIdentifier = False # false = cols, true = rows
-        self.mainHandler = False # false = vertical, true = horizontal
 
         self.old_column = ""
         self.df_orientation = 'cols' # Default orientation
@@ -202,7 +199,7 @@ class mainView(QMainWindow):
             return
             
         # Get results from dialog
-        self.df, self.mainIdentifier, self.mainHandler = dialog.getResults()
+        self.df = dialog.getResults()
         
         # Clear UI elements
         self.plotWidgetLog2.clear_plot()
@@ -213,13 +210,7 @@ class mainView(QMainWindow):
         self.tableColumn.setVisible(False)
         self.old_column = ""
         
-        # Set up the model based on orientation
-        if self.mainIdentifier:  # Rows
-            model = PandasModelRows(self.df)
-        else:  # Columns
-            model = PandasModel(self.df)
-            
-        self.DfModel = model
+        self.DfModel = PandasModel(self.df)
         self.DfReset._df = self.df.copy()
         
         # Update the table view
@@ -286,22 +277,13 @@ class mainView(QMainWindow):
         if not hasattr(self, 'DfModel') or self.DfModel._df.empty:
             return
 
-        if self.df_orientation == 'rows':
-            # Row-oriented view: a view column is a df row
-            header_label = self.DfModel._df.index[column_index]
-            if self.old_column == header_label:
-                return
-            # For stats, we want a column-like view of the row data
-            cutDF = self.DfModel._df.loc[[header_label]].T
-        else:
-            # Column-oriented view: a view column is a df column
-            header_label = self.DfModel._df.columns[column_index]
-            if self.old_column == header_label:
-                return
-            cutDF = self.DfModel._df[[header_label]]
+        col_name = self.DfModel._df.columns[column_index]
 
-        self.old_column = header_label
         self.plotWidgetNullDistribution.clear_plot()
+        if self.old_column == col_name:
+            return
+
+        cutDF = self.DfModel._df[[col_name]]
 
         # Get stats for the selected data
         colDF = preprocessing_summary_perVariable(cutDF)
