@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Summary - Omics Data Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- General Statistics -->
+        <div class="col-lg-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        General Dataset Statistics
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        {{ general_stats|safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <!-- Plots -->
+        <div class="col-lg-12">
+            <div class="row">
+                <!-- Data Types Distribution -->
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">Data Types Distribution</div>
+                        <div class="card-body">
+                            <div id="dataTypesPlot"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Mean Intensity (if available) -->
+                {% if plots.mean_intensity %}
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">Mean Intensity</div>
+                        <div class="card-body">
+                            <div id="meanIntensityPlot"></div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Correlation Matrix (if available) -->
+                {% if plots.correlation %}
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">Correlation Matrix</div>
+                        <div class="card-body">
+                            <div id="correlationPlot"></div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Missing Values Heatmap -->
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">Missing Values Distribution</div>
+                        <div class="card-body">
+                            <div id="missingHeatmapPlot"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Render plots
+        {% if plots.data_types %}
+        try {
+            const dataTypesData = {{ plots.data_types|safe }};
+            Plotly.newPlot('dataTypesPlot', dataTypesData.data, dataTypesData.layout);
+        } catch (e) {
+            console.error('Error rendering data types plot:', e);
+        }
+        {% endif %}
+        
+        {% if plots.mean_intensity %}
+        try {
+            const meanIntensityData = {{ plots.mean_intensity|safe }};
+            Plotly.newPlot('meanIntensityPlot', meanIntensityData.data, meanIntensityData.layout);
+        } catch (e) {
+            console.error('Error rendering mean intensity plot:', e);
+        }
+        {% endif %}
+        
+        {% if plots.correlation %}
+        try {
+            const correlationData = {{ plots.correlation|safe }};
+            Plotly.newPlot('correlationPlot', correlationData.data, correlationData.layout);
+        } catch (e) {
+            console.error('Error rendering correlation plot:', e);
+        }
+        {% endif %}
+        
+        {% if plots.missing_heatmap %}
+        try {
+            const missingHeatmapData = {{ plots.missing_heatmap|safe }};
+            Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
+        } catch (e) {
+            console.error('Error rendering missing heatmap plot:', e);
+        }
+        {% endif %}
+    });
+</script>
+{% endblock %}

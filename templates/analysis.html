@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis - Omics Data Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-lg-9">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Processed Data</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Shape: {{ shape[0] }} rows, {{ shape[1] }} columns</p>
+                    <div class="table-responsive">
+                        {{ df_html|safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Column Information</h5>
+                </div>
+                <div class="card-body" id="columnInfoContainer">
+                    <p class="text-muted">Click on a column header to see details.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#analysis-table').DataTable({
+        "scrollX": true
+    });
+
+    $('#analysis-table thead').on('click', 'th', function() {
+        var colName = $(this).text();
+        
+        // Fetch and display column info
+        $.get(`/column_info/${colName}`)
+            .done(function(data) {
+                if(data.error) {
+                    $('#columnInfoContainer').html(`<p class="text-danger">${data.error}</p>`);
+                    return;
+                }
+                let content = `<h6>${colName}</h6>${data.stats}`;
+                if(data.null_plot) {
+                    content += '<div id="null-plot"></div>';
+                }
+                $('#columnInfoContainer').html(content);
+
+                if(data.null_plot) {
+                    const plotData = JSON.parse(data.null_plot);
+                    Plotly.newPlot('null-plot', plotData.data, plotData.layout);
+                }
+            })
+            .fail(function() {
+                $('#columnInfoContainer').html('<p class="text-danger">Error loading column data.</p>');
+            });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Comparison - Omics Data Analysis{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+<style>
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Original Data</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
+                    <div class="table-container">
+                        {{ original_html|safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Processed Data</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Shape: {{ processed_shape[0] }} rows, {{ processed_shape[1] }} columns</p>
+                    <div class="table-container">
+                        {{ processed_html|safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<script>
+$(document).ready(function() {
+    // It's tricky to sync scrolling perfectly with DataTables due to headers/footers.
+    // A simpler approach for now is to just make both tables independently scrollable.
+    $('table').DataTable({
+        "scrollX": true,
+        "paging": true,
+        "searching": true
+    });
+});
+</script>
+{% endblock %}

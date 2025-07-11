@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Omics Data Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="text-center py-5">
+                <h1 class="display-4 mb-4">
+                    <i class="fas fa-dna text-primary me-3"></i>
+                    Omics Data Analysis Platform
+                </h1>
+                <p class="lead mb-5">
+                    A comprehensive web-based tool for analyzing omics data with advanced 
+                    preprocessing, imputation, and visualization capabilities.
+                </p>
+                
+                <div class="row g-4 mb-5">
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="fas fa-upload fa-3x text-primary mb-3"></i>
+                                <h5 class="card-title">Load Data</h5>
+                                <p class="card-text">
+                                    Upload your omics datasets in various formats 
+                                    (CSV, TSV, XML) with flexible orientation options.
+                                </p>
+                                <a href="{{ url_for('upload_file') }}" class="btn btn-primary">
+                                    Get Started
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="fas fa-tools fa-3x text-primary mb-3"></i>
+                                <h5 class="card-title">Process Data</h5>
+                                <p class="card-text">
+                                    Apply advanced preprocessing techniques including 
+                                    thresholding, imputation, and normalization methods.
+                                </p>
+                                <a href="{{ url_for('imputation') }}" class="btn btn-outline-primary">
+                                    Learn More
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <i class="fas fa-chart-line fa-3x text-primary mb-3"></i>
+                                <h5 class="card-title">Analyze & Visualize</h5>
+                                <p class="card-text">
+                                    Generate comprehensive statistical summaries and 
+                                    interactive visualizations of your data.
+                                </p>
+                                <a href="{{ url_for('summary') }}" class="btn btn-outline-primary">
+                                    Explore
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Key Features
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <ul class="list-unstyled">
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Multiple file format support
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Advanced imputation methods (KNN, MICE, SVD, etc.)
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Interactive data visualization
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Statistical analysis and summaries
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <ul class="list-unstyled">
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Metadata management
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Data quality assessment
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Before/after comparison views
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Session-based data management
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

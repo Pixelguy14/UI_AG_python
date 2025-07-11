@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}DataFrame - Omics Data Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Main DataFrame -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-table me-2"></i>
+                        DataFrame Table
+                    </h5>
+                    <span class="badge bg-secondary">
+                        Shape: {{ shape[0] }} × {{ shape[1] }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        {{ df_html|safe }}
+                    </div>
+                    <p class="text-muted mt-3 mb-0">
+                        <i class="fas fa-mouse-pointer me-1"></i>
+                        Click a column header to display column information
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Column Information Sidebar -->
+        <div class="col-lg-4">
+            <!-- Null Distribution Plot -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-pie me-2"></i>
+                        Column Analysis
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div id="nullDistributionPlot" style="height: 300px;">
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-mouse-pointer fa-2x mb-2"></i>
+                            <p>Click a column header to view analysis</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Column Statistics -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0" id="columnInfoTitle">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Column Information
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div id="columnStats">
+                        <div class="text-center text-muted py-3">
+                            <p>Select a column to view statistics</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Make table headers clickable
+        $('#dataframe-table th').addClass('clickable-column').click(function() {
+            const columnName = $(this).text().trim();
+            if (columnName) {
+                loadColumnInfo(columnName);
+            }
+        });
+    });
+    
+    function loadColumnInfo(columnName) {
+        $.get(`/column_info/${encodeURIComponent(columnName)}`)
+            .done(function(data) {
+                if (data.error) {
+                    $('#columnStats').html(`<div class="alert alert-danger">${data.error}</div>`);
+                    return;
+                }
+                
+                $('#columnInfoTitle').html(`<i class="fas fa-info-circle me-2"></i>${columnName}`);
+                $('#columnStats').html(data.stats);
+                
+                // Render null distribution plot
+                const plotData = JSON.parse(data.null_plot);
+                Plotly.newPlot('nullDistributionPlot', plotData);
+            })
+            .fail(function() {
+                $('#columnStats').html('<div class="alert alert-danger">Error loading column information</div>');
+            });
+    }
+</script>
+{% endblock %}

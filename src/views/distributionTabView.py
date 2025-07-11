@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QLabel, QTableView, QHeaderView, QAbstractScrollArea, QSizePolicy, QVBoxLayout, QGridLayout
 from src.models.pandas_tablemodel import PandasModel
 from src.models.plot_widgetmodel import PlotWidgetQC
+# from src.models.plot_widgetmodel_pyqtgraph import PlotWidgetQC
 from PyQt5.QtCore import Qt
 
 def setupViewDistributionTab(self):

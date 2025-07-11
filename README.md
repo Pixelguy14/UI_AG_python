@@ -19,24 +19,24 @@ It's best practice to use a virtual environment to keep project dependencies iso
 
 Create the virtual environment:
 ```sh
-python3 -m venv GUI_AG
+python3 -m venv env_AG
 ```
 
 Now, activate it. The command varies based on your operating system:
 
 ### For macOS and Linux:
 ```sh
-source GUI_AG/bin/activate
+source env_AG/bin/activate
 ```
 
 ### For Windows:
 In Command Prompt:
 ```cmd
-GUI_AG\Scripts\activate.bat
+env_AG\Scripts\activate.bat
 ```
 In PowerShell:
 ```powershell
-GUI_AG\Scripts\Activate.ps1
+env_AG\Scripts\Activate.ps1
 ```
 
 ## 3. Install Dependencies
