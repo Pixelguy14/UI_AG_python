@@ -1,8 +1,0 @@
-Flask
-pandas
-numpy
-plotly
-scipy
-scikit-learn
-Flask-Session
-pyopenms

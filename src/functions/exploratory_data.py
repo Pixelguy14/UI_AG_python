@@ -129,6 +129,8 @@ def loadDF_Feature(myFeatureXML):
                     file_meta[k] = float(value)
                 else:
                     file_meta[k] = str(value)
+            else:
+                file_meta[k] = str(value)
         
         rows = []
         for feature in feature_map:
@@ -324,4 +326,3 @@ def preprocessing_summary_perVariable(df):
     summary['zero_pct'] = summary['zero_count'] / len(df) * 100
 
     return summary.sort_values(by='type')
-

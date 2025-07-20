@@ -1,62 +1,83 @@
-from PyQt5.QtWidgets import QLabel, QTableView, QHeaderView, QAbstractScrollArea, QSizePolicy, QVBoxLayout, QGridLayout
-from src.models.pandas_tablemodel import PandasModel
-from src.models.plot_widgetmodel import PlotWidgetQC
-# from src.models.plot_widgetmodel_pyqtgraph import PlotWidgetQC
-from PyQt5.QtCore import Qt
+from flask import Blueprint, render_template, session, flash, redirect, url_for, jsonify
+import pandas as pd
+import plotly
+import plotly.graph_objs as go
+import json
 
-def setupViewDistributionTab(self):
-    self.viewDistributionGrid = QGridLayout()
+from src.functions.exploratory_data import preprocessing_summary_perVariable
 
-    # Create a vertical layout for the table section
-    verticalBoxLayout = QVBoxLayout()
-    
-    # Title
-    title = QLabel("Sample DataFrame Table")
-    title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333; padding: 5px;")
-    verticalBoxLayout.addWidget(title)
-    
-    # Sample DataFrame table 
-    self.dfSampleTable = QTableView()
-    self.dfSampleTable.setAlternatingRowColors(True)
-    self.dfSampleTable.setSelectionBehavior(QTableView.SelectItems)
-    self.dfSampleTable.setEditTriggers(QTableView.NoEditTriggers)
-    
-    # Configure header
-    header = self.dfSampleTable.horizontalHeader()
-    header.setSectionResizeMode(QHeaderView.Interactive)
-    header.setMinimumSectionSize(70)
-    header.setDefaultSectionSize(150)
-    header.setMaximumSectionSize(300)
-    
-    # Configure table behavior
-    self.dfSampleTable.setHorizontalScrollMode(QTableView.ScrollPerPixel)
-    self.dfSampleTable.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-    self.dfSampleTable.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-    self.dfSampleTable.verticalHeader().setVisible(False)
-    self.dfSampleTable.verticalHeader().setDefaultSectionSize(50)
-    
-    # Set the PandasModel
-    self.DfSampleThd = PandasModel()
-    self.dfSampleTable.setModel(self.DfSampleThd)
-    verticalBoxLayout.addWidget(self.dfSampleTable)
-    
-    # Add instruction label
-    self.labelInstructionImp = QLabel("Click a column header to display column distribution")
-    self.labelInstructionImp.setStyleSheet("font-style: italic; color: #666; padding: 5px;")
-    self.labelInstructionImp.setAlignment(Qt.AlignCenter)
-    verticalBoxLayout.addWidget(self.labelInstructionImp)
-    
-    # Add table container to grid
-    self.viewDistributionGrid.addLayout(verticalBoxLayout, 0, 0, 4, 4)
+distribution_bp = Blueprint('distribution', __name__)
 
-    # Create a vertical layout for the plot section
-    plotVerticalBoxLayout = QVBoxLayout()
-    self.plotWidgetDistribution = PlotWidgetQC(self.viewDistributionTab)
-    plotVerticalBoxLayout.addWidget(self.plotWidgetDistribution)
-    self.viewDistributionGrid.addLayout(plotVerticalBoxLayout, 0, 4, 4, 4)
+@distribution_bp.route('/distribution')
+def distribution_view():
+    if session.get('df_sample_thd') is None:
+        flash('Please process sample data first')
+        return redirect(url_for('imputation.imputation_view'))
+    
+    df = session['df_sample_thd']
+    
+    return render_template('distribution.html', 
+                         columns=df.columns.tolist())
 
-    self.viewDistributionGrid.setColumnStretch(0, 4)
-    self.viewDistributionGrid.setColumnStretch(4, 4)
-    self.viewDistributionTab.setLayout(self.viewDistributionGrid)
+@distribution_bp.route('/distribution/plot/<column_name>')
+def get_distribution_plot(column_name):
+    if session.get('df_sample_thd') is None:
+        return jsonify({'error': 'No sample data available'}), 404
+    
+    df = session['df_sample_thd']
+    
+    if column_name not in df.columns:
+        return jsonify({'error': 'Column not found'}), 404
+    
+    data_series = df[column_name].dropna()
+    
+    if data_series.empty:
+        return jsonify({'error': 'No data available for this column'}), 404
+    
+    # Create distribution plot
+    plot = create_distribution_plot(data_series, column_name)
+    
+    # Get column stats
+    stats_df = preprocessing_summary_perVariable(df[[column_name]])
+    stats_html = stats_df.to_html(classes='table table-striped table-sm', index=False)
 
-    header.sectionClicked.connect(self.onColumnDistributionClicked)
+    return jsonify({'plot': plot, 'stats': stats_html})
+
+
+def create_distribution_plot(data_series, column_name):
+    fig = go.Figure()
+    
+    # Histogram
+    fig.add_trace(go.Histogram(
+        x=data_series.tolist(), # Convert pandas Series to a list
+        nbinsx=30,
+        name='Histogram',
+        opacity=0.7
+    ))
+    
+    # Add statistics text
+    stats_text = f"n = {len(data_series)}<br>"
+    stats_text += f"μ = {data_series.mean():.4f}<br>"
+    stats_text += f"σ = {data_series.std():.4f}<br>"
+    stats_text += f"Skew = {data_series.skew():.4f}<br>"
+    stats_text += f"Kurt = {data_series.kurtosis():.4f}"
+    
+    fig.add_annotation(
+        text=stats_text,
+        xref="paper", yref="paper",
+        x=0.98, y=0.98,
+        showarrow=False,
+        align="right",
+        bgcolor="white",
+        bordercolor="black",
+        borderwidth=1
+    )
+    
+    fig.update_layout(
+        title=f'Distribution of {column_name}',
+        xaxis_title='Value',
+        yaxis_title='Frequency',
+        template='plotly_white'
+    )
+    
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)

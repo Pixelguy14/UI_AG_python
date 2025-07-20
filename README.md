@@ -43,7 +43,7 @@ env_AG\Scripts\Activate.ps1
 
 With the virtual environment active, install the necessary packages:
 ```sh
-pip install -r src/utils/requirements.txt
+pip install -r src/requirements.txt
 ```
 
 ## 4. Run the Project

@@ -100,6 +100,7 @@
         // Handle column removal
         $('.remove-column').click(function() {
             const column = $(this).data('column');
+            /*
             if (confirm(`Are you sure you want to remove column "${column}"?`)) {
                 assignments[column] = 'removed';
                 $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
@@ -111,12 +112,23 @@
                     bindRemoveHandler($(this));
                 });
             }
+            */
+            assignments[column] = 'removed';
+            $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
+            $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
+                assignments[column] = 'undefined';
+                $(this).closest('tr').removeClass('table-danger').find('select').prop('disabled', false).val('undefined');
+                $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
+                // Re-bind remove handler
+                bindRemoveHandler($(this));
+            });
         });
     });
     
     function bindRemoveHandler(button) {
         button.off('click').click(function() {
             const column = $(this).data('column');
+            /*
             if (confirm(`Are you sure you want to remove column "${column}"?`)) {
                 assignments[column] = 'removed';
                 $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
@@ -127,6 +139,15 @@
                     bindRemoveHandler($(this));
                 });
             }
+            */
+            assignments[column] = 'removed';
+            $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
+            $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
+                assignments[column] = 'undefined';
+                $(this).closest('tr').removeClass('table-danger').find('select').prop('disabled', false).val('undefined');
+                $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
+                bindRemoveHandler($(this));
+            });
         });
     }
     

@@ -9,26 +9,66 @@
 {% block content %}
 <div class="container-fluid">
     <div class="row">
-        <div class="col-lg-9">
+        <!--Sample DataFrame-->
+        <div class="col-lg-8">
             <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Processed Data</h5>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-table me-2"></i>
+                        Processed Data
+                    </h5>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">Shape: {{ shape[0] }} rows, {{ shape[1] }} columns</p>
-                    <div class="table-responsive">
+                    <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
                         {{ df_html|safe }}
                     </div>
+                    <p class="text-muted mt-3 mb-0">
+                        <i class="fas fa-mouse-pointer me-1"></i>
+                        Click a column header to display column information
+                    </p>
                 </div>
             </div>
         </div>
-        <div class="col-lg-3">
+
+        <!-- Column Information Sidebar -->
+        <div class="col-lg-4">
+            <!-- Null Distribution Plot -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-pie me-2"></i>
+                        Column Analysis
+                    </h6>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-light active" id="pie-chart-btn">Pie Chart</button>
+                        <button type="button" class="btn btn-light" id="density-plot-btn">Density Plot</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="plot-container" style="height: 300px;">
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-mouse-pointer fa-2x mb-2"></i>
+                            <p>Click a column header to view analysis</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Column Statistics -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0">Column Information</h5>
+                    <h6 class="mb-0" id="columnInfoTitle">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Column Information
+                    </h6>
                 </div>
-                <div class="card-body" id="columnInfoContainer">
-                    <p class="text-muted">Click on a column header to see details.</p>
+                <div class="card-body">
+                    <div id="columnStats" style="max-height: 40vh; overflow-y: auto;">
+                        <div class="text-center text-muted py-3">
+                            <p>Click a column header to view statistics</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -37,39 +77,68 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<!--<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>-->
+<!--<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>-->
 <script>
+let currentColumn = null;
+let currentPlotType = 'pie';
+
 $(document).ready(function() {
-    $('#analysis-table').DataTable({
-        "scrollX": true
+    // Make the headers clickable
+    $('#analysis-table th').addClass('clickable-column').click(function() {
+        currentColumn = $(this).text().trim();
+        if (currentColumn) {
+            loadColumnInfo(currentColumn, currentPlotType);
+        }
     });
 
-    $('#analysis-table thead').on('click', 'th', function() {
-        var colName = $(this).text();
-        
-        // Fetch and display column info
-        $.get(`/column_info/${colName}`)
-            .done(function(data) {
-                if(data.error) {
-                    $('#columnInfoContainer').html(`<p class="text-danger">${data.error}</p>`);
-                    return;
-                }
-                let content = `<h6>${colName}</h6>${data.stats}`;
-                if(data.null_plot) {
-                    content += '<div id="null-plot"></div>';
-                }
-                $('#columnInfoContainer').html(content);
+    $('#pie-chart-btn').click(function() {
+        currentPlotType = 'pie';
+        updateButtonStates();
+        if (currentColumn) {
+            loadColumnInfo(currentColumn, currentPlotType);
+        }
+    });
 
-                if(data.null_plot) {
-                    const plotData = JSON.parse(data.null_plot);
-                    Plotly.newPlot('null-plot', plotData.data, plotData.layout);
-                }
-            })
-            .fail(function() {
-                $('#columnInfoContainer').html('<p class="text-danger">Error loading column data.</p>');
-            });
+    $('#density-plot-btn').click(function() {
+        currentPlotType = 'density';
+        updateButtonStates();
+        if (currentColumn) {
+            loadColumnInfo(currentColumn, currentPlotType);
+        }
     });
 });
+
+function updateButtonStates() {
+    $('#pie-chart-btn').toggleClass('active', currentPlotType === 'pie');
+    $('#density-plot-btn').toggleClass('active', currentPlotType === 'density');
+}
+
+function loadColumnInfo(columnName, plotType) {
+    const url = plotType === 'pie' ? `/column_info_analysis/${encodeURIComponent(columnName)}` : `/column_density_plot/${encodeURIComponent(columnName)}`;
+
+    $.get(url)
+        .done(function(data) {
+            if (data.error) {
+                $('#plot-container').html(`<div class="alert alert-danger">${data.error}</div>`);
+                return;
+            }
+
+            // Always update the stats and title
+            $('#columnInfoTitle').html(`<i class="fas fa-info-circle me-2"></i>${columnName}`);
+            $('#columnStats').html(data.stats);
+
+            if (plotType === 'pie') {
+                const plotData = JSON.parse(data.null_plot);
+                Plotly.newPlot('plot-container', plotData);
+            } else {
+                const plotData = JSON.parse(data.density_plot);
+                Plotly.newPlot('plot-container', plotData);
+            }
+        })
+        .fail(function() {
+            $('#plot-container').html('<div class="alert alert-danger">Error loading column information</div>');
+        });
+}
 </script>
 {% endblock %}

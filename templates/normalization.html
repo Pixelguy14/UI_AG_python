@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Imputation - Omics Data Analysis{% endblock %}
+{% block title %}Normalization - Omics Data Analysis{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -10,53 +10,28 @@
     <div class="row">
         <!-- Controls -->
         <div class="col-lg-4">
-            <!-- Thresholding -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-filter me-2"></i>Thresholding</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted">Set the percentage threshold for non-null values per row.</p>
-                    <div class="mb-3">
-                        <label for="thresholdSlider" class="form-label">Threshold: <span id="thresholdValue">80</span>%</label>
-                        <input type="range" class="form-range" id="thresholdSlider" min="0" max="100" value="80" step="10">
-                    </div>
-                    <div class="progress mb-3" id="thresholdProgress" style="display: none;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
-                    </div>
-                    <button type="button" id="applyThresholdBtn" class="btn btn-success w-100" onclick="applyThreshold()">
-                        <i class="fas fa-check me-2"></i>Apply Thresholding
-                    </button>
-                </div>
-            </div>
             
-            <!-- Imputation Methods -->
+            <!-- Normalization Methods -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Imputation Methods</h5>
+                    <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Normalization Methods</h5>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label for="imputationMethod" class="form-label">Method:</label>
-                        <select class="form-select" id="imputationMethod" onchange="updateImputationOptions()">
-                            <option value="n_imputation">N Imputation</option>
-                            <option value="half_minimum">Half Minimum Imputation</option>
-                            <option value="mean">Mean Imputation</option>
-                            <option value="median">Median Imputation</option>
-                            <option value="miss_forest">Miss Forest Imputation</option>
-                            <option value="svd">SVD Imputation</option>
-                            <option value="knn">KNN Imputation</option>
-                            <option value="mice_bayesian">MICE (Bayesian Ridge)</option>
-                            <option value="mice_linear">MICE (Linear Regression)</option>
+                        <label for="normalizationMethod" class="form-label">Method:</label>
+                        <select class="form-select" id="normalizationMethod" onchange="updateImputationOptions()">
+                            <option value="n_imputation">Total Ion Current (TIC)</option>
+                            <option value="half_minimum">Quantile Normalization</option>
+                            <option value="median">Median/Sum Normalization</option>
                         </select>
                     </div>
                     <div class="alert alert-info" id="methodDescription"><small id="descriptionText"></small></div>
                     <div id="methodParameters"></div>
-                    <div class="progress mt-3" id="imputationProgress" style="display: none;">
+                    <div class="progress mt-3" id="normalizationProgress" style="display: none;">
                         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                     </div>
-                    <button type="button" id="applyImputationBtn" class="btn btn-primary w-100 mt-3" onclick="applyImputation()">
-                        <i class="fas fa-magic me-2"></i>Apply Imputation
+                    <button type="button" id="applyNormalizationBtn" class="btn btn-primary w-100 mt-3" onclick="applyImputation()">
+                        <i class="fas fa-magic me-2"></i>Apply Normalization
                     </button>
                 </div>
             </div>
@@ -66,21 +41,23 @@
         <div class="col-lg-8">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data Information</h5>
+                    <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data visualization</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-6">
-                            <h6>Original Sample Data:</h6>
+                            <h6>Visualize pre-Distribution Sample Data:</h6>
                             <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
-                        </div>
-                        <div class="col-md-6">
-                            <h6>Current Processed Data:</h6>
-                            <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
                         </div>
                         <button type="button" class="btn btn-secondary w-100 mt-2" onclick="resetData()">
                             <i class="fas fa-undo me-2"></i>Reset to Original Sample Data
                         </button>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <h6>Visualize post-Distribution Sample Data:</h6>
+                            <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
+                        </div>
                     </div>
                     <div class="mt-4">
                         <h6>Processing Steps:</h6>
@@ -129,7 +106,7 @@
     }
 
     function updateImputationOptions() {
-        const method = $('#imputationMethod').val();
+        const method = $('#normalizationMethod').val();
         $('#descriptionText').text(methodDescriptions[method]);
         let paramsHtml = '';
         if (method === 'n_imputation') {
@@ -197,9 +174,9 @@
 
     function applyImputation() {
         debugger;
-        const method = $('#imputationMethod').val();
-        const btn = $('#applyImputationBtn');
-        const progress = $('#imputationProgress');
+        const method = $('#normalizationMethod').val();
+        const btn = $('#applyNormalizationBtn');
+        const progress = $('#normalizationProgress');
 
         progress.show();
         btn.prop('disabled', true);

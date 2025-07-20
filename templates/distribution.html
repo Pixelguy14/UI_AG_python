@@ -65,8 +65,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
 
                 // Render plot
-                const plotData = JSON.parse(data.plot);
-                Plotly.newPlot('plotContainer', plotData.data, plotData.layout);
+                try {
+                    console.log('Raw data from fetch:', data);
+                    const plotData = JSON.parse(data.plot);
+                    console.log('Parsed plotData:', plotData);
+                    Plotly.newPlot('plotContainer', plotData.data, plotData.layout);
+                } catch (e) {
+                    console.error('Error rendering Plotly plot:', e);
+                    plotContainer.innerHTML = `<p class="text-danger">Error rendering plot: ${e.message}</p>`;
+                }
 
                 // Render stats
                 statsContainer.innerHTML = data.stats;

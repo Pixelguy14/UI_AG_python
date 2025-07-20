@@ -73,6 +73,19 @@
             </div>
         </div>
     </div>
+    <!-- Boxplot Distribution -->
+    {% if plots.boxplot_distribution %}
+    <div class="row mt-4">
+        <div class="col-lg-12 mb-4">
+            <div class="plot-container card">
+                <div class="card-header">Boxplot Distribution Plot</div>
+                <div class="card-body">
+                    <div id="boxplotDistributionPlot" style="min-height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -113,6 +126,15 @@
             Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
         } catch (e) {
             console.error('Error rendering missing heatmap plot:', e);
+        }
+        {% endif %}
+
+        {% if plots.boxplot_distribution %}
+        try {
+            const boxplotDistributionData = {{ plots.boxplot_distribution|safe }};
+            Plotly.newPlot('boxplotDistributionPlot', boxplotDistributionData.data, boxplotDistributionData.layout);
+        } catch (e) {
+            console.error('Error rendering boxplot distribution plot:', e);
         }
         {% endif %}
     });
