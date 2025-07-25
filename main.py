@@ -1,11 +1,9 @@
-import json
+# import json
 import logging
 import os
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
-import plotly.utils
 from flask import (
     Flask,
     flash,
@@ -35,6 +33,43 @@ from src.functions.imputation_methods import (
     nImputed,
     postprocess_imputation,
     svdImputed,
+)
+from src.functions.normalization_methods import (
+    tic_normalization,
+    mtic_normalization,
+    median_normalization,
+    quantile_normalization,
+    pqn_normalization,
+    # is_normalization,
+    # svr_normalization,
+)
+from src.functions.log_transfomation_methods import (
+    log2_transform,
+    log10_transform,
+    sqrt_transform,
+    cube_root_transform,
+    arcsinh_transform,
+    glog_transform,
+    yeo_johnson_transform,
+)
+from src.functions.scaling_methods import (
+    standard_scaling,
+    minmax_scaling,
+    pareto_scaling,
+    range_scaling,
+    robust_scaling,
+    vast_scaling,
+)
+from src.functions.plot_definitions import (
+    create_bar_plot,
+    create_boxplot,
+    create_density_plot,
+    create_distribution_plot,
+    create_heatmap,
+    create_heatmap_BW,
+    create_pca_plot,
+    create_pie_chart,
+    create_violinplot,
 )
 from src.views.distributionTabView import distribution_bp
 
@@ -66,12 +101,8 @@ def before_request():
         session['df_metadata'] = None
     if 'df_sample' not in session:
         session['df_sample'] = None
-    if 'df_sample_thd' not in session:
-        session['df_sample_thd'] = None
-    if 'df_sample_imp' not in session:
-        session['df_sample_imp'] = None
-    if 'df_sample_pre_imp' not in session:
-        session['df_sample_pre_imp'] = None
+    if 'df_history' not in session:
+        session['df_history'] = []
     if 'imputed_mask' not in session:
         session['imputed_mask'] = None
     if 'df_original' not in session:
@@ -173,8 +204,8 @@ def summary():
     )
     
     # Correlation matrix (if we have sample data)
-    if session.get('df_sample_thd') is not None and not session.get('df_sample_thd').empty:
-        df_sample = session['df_sample_thd']
+    if session.get('df_history') and not session['df_history'][-1].empty:
+        df_sample = session['df_history'][-1]
         numeric_df = df_sample.select_dtypes(include=[np.number])
         
         if not numeric_df.empty and numeric_df.shape[1] > 1:
@@ -188,9 +219,10 @@ def summary():
         
         # Missing values heatmap
         plots['missing_heatmap'] = create_heatmap_BW(
-            df_sample.isnull().astype(int),
+            df_sample,
             title='Missing Values Distribution',
-            imputed=session['imputation_performed']
+            imputed=session['imputation_performed'],
+            null_mask=session.get('imputed_mask')
         )
         
         # Mean intensity bar chart
@@ -217,9 +249,7 @@ def summary():
             df.isnull().astype(int),
             title='Missing Values Distribution'
         )
-        
-    
-    
+
     return render_template('summary.html', 
                          general_stats=general_stats.to_html(classes='table table-striped'),
                          plots=plots)
@@ -272,10 +302,10 @@ def column_info(column_name):
     
 @app.route('/column_info_analysis/<column_name>')
 def column_info_analysis(column_name):
-    if session.get('df_sample_thd') is None:
+    if not session.get('df_history'):
         return jsonify({'error': 'No data loaded'})
     
-    df = session['df_sample_thd']
+    df = session['df_history'][-1]
     
     if column_name not in df.columns:
         return jsonify({'error': 'Column not found'})
@@ -301,10 +331,10 @@ def column_info_analysis(column_name):
 
 @app.route('/column_density_plot/<column_name>')
 def column_density_plot(column_name):
-    if session.get('df_sample_thd') is None:
+    if not session.get('df_history'):
         return jsonify({'error': 'No data loaded'})
 
-    df = session['df_sample_thd']
+    df = session['df_history'][-1]
 
     if column_name not in df.columns:
         return jsonify({'error': 'Column not found'})
@@ -377,7 +407,7 @@ def metadata():
         # Store in session
         session['df_metadata'] = df_metadata if not df_metadata.empty else None
         session['df_sample'] = df_sample if not df_sample.empty else None
-        session['df_sample_thd'] = df_sample if not df_sample.empty else pd.DataFrame()
+        session['df_history'] = [df_sample] if not df_sample.empty else []
         session['df_main'] = df_original
         
         return jsonify({'success': True, 'message': 'Metadata assignments saved successfully'})
@@ -398,12 +428,11 @@ def metadata():
 
 @app.route('/imputation')
 def imputation():
-    if session.get('df_sample') is None:
+    if not session.get('df_history'):
         flash('Please define sample data first')
         return redirect(url_for('metadata'))
     
-    df_sample = session['df_sample']
-    df_sample_thd = session.get('df_sample_thd', session['df_sample'])
+    df_sample = session['df_history'][-1]
     
     # Initialize steps if they are empty
     if 'processing_steps' not in session or not session['processing_steps']:
@@ -412,25 +441,26 @@ def imputation():
     plots = {}
     # Missing values heatmap for imputation tab
     plots['missing_heatmap'] = create_heatmap_BW(
-        df_sample_thd.isnull().astype(int),
+        df_sample,
         title='Missing Values Distribution (Imputed Highlighted)',
-        imputed=session['imputation_performed']
+        imputed=session['imputation_performed'],
+        null_mask=session.get('imputed_mask')
     )
 
     return render_template('imputation.html',
-                         original_shape=df_sample.shape,
-                         current_shape=df_sample_thd.shape,
+                         original_shape=session['df_sample'].shape,
+                         current_shape=df_sample.shape,
                          processing_steps=session['processing_steps'],
                          plots=plots)
 
 @app.route('/threshold', methods=['POST'])
 def threshold():
-    if session.get('df_sample') is None:
+    if not session.get('df_history'):
         return jsonify({'error': 'No sample data available'})
     
     threshold_percent = float(request.json.get('threshold', 80))
     
-    df_sample = session['df_sample']
+    df_sample = session['df_history'][-1]
     
     # Apply thresholding
     num_columns = len(df_sample.columns)
@@ -439,7 +469,7 @@ def threshold():
     df_thresholded = df_sample.dropna(thresh=threshold_count)
     
     # Store result
-    session['df_sample_thd'] = df_thresholded
+    session['df_history'].append(df_thresholded)
     
     # Update processing steps
     session['processing_steps'].append({'icon': 'fa-filter', 'color': 'text-info', 'message': f'Applied thresholding: {threshold_percent}% non-null values. New shape: {df_thresholded.shape[0]} rows, {df_thresholded.shape[1]} columns.'})
@@ -447,14 +477,15 @@ def threshold():
 
     # Generate and return the updated heatmap data
     updated_heatmap = create_heatmap_BW(
-        df_thresholded.isnull().astype(int),
+        df_thresholded,
         title='Missing Values Distribution (Imputed Highlighted)',
-        imputed=session['imputation_performed']
+        imputed=session['imputation_performed'],
+        null_mask=session.get('imputed_mask')
     )
 
     return jsonify({
         'success': True,
-        'original_shape': df_sample.shape,
+        'original_shape': session['df_sample'].shape,
         'new_shape': df_thresholded.shape,
         'message': f'Thresholding applied with {threshold_percent}%',
         'steps': session['processing_steps'],
@@ -463,61 +494,56 @@ def threshold():
 
 @app.route('/apply_imputation', methods=['POST'])
 def apply_imputation():
-    if session.get('df_sample_thd') is None:
+    if not session.get('df_history'):
         return jsonify({'error': 'No thresholded sample data available'})
     
     method = request.json.get('method')
     params = request.json.get('params', {})
     
-    df_sample_thd = session['df_sample_thd']
-    
-    # Store the state before imputation to identify imputed values
-    session['df_sample_pre_imp'] = df_sample_thd.copy()
+    df_before_imputation = session['df_history'][-1]
 
     try:
         # Apply scaling for advanced methods
-        df_scaled = (df_sample_thd - df_sample_thd.mean()) / df_sample_thd.std()
+        df_scaled = (df_before_imputation - df_before_imputation.mean()) / df_before_imputation.std()
         
         if method == 'n_imputation':
             n_val = params.get('n_value', 0)
-            imputed_df = nImputed(df_sample_thd, n=n_val)
+            imputed_df = nImputed(df_before_imputation, n=n_val)
         elif method == 'half_minimum':
-            imputed_df = halfMinimumImputed(df_sample_thd)
+            imputed_df = halfMinimumImputed(df_before_imputation)
         elif method == 'mean':
-            imputed_df = meanImputed(df_sample_thd)
+            imputed_df = meanImputed(df_before_imputation)
         elif method == 'median':
-            imputed_df = medianImputed(df_sample_thd)
+            imputed_df = medianImputed(df_before_imputation)
         elif method == 'miss_forest':
             max_iter = params.get('max_iter', 10)
             n_estimators = params.get('n_estimators', 100)
             imputed_df = missForestImputed(df_scaled, max_iter=max_iter, n_estimators=n_estimators)
-            imputed_df = postprocess_imputation(imputed_df, df_sample_thd)
+            imputed_df = postprocess_imputation(imputed_df, df_before_imputation)
         elif method == 'svd':
             n_components = params.get('n_components', 5)
             imputed_df = svdImputed(df_scaled, n_components=n_components)
-            imputed_df = postprocess_imputation(imputed_df, df_sample_thd)
+            imputed_df = postprocess_imputation(imputed_df, df_before_imputation)
         elif method == 'knn':
             n_neighbors = params.get('n_neighbors', 2)
             imputed_df = knnImputed(df_scaled, n_neighbors=n_neighbors)
-            imputed_df = postprocess_imputation(imputed_df, df_sample_thd)
+            imputed_df = postprocess_imputation(imputed_df, df_before_imputation)
         elif method == 'mice_bayesian':
             max_iter = params.get('max_iter', 20)
             imputed_df = miceBayesianRidgeImputed(df_scaled, max_iter=max_iter)
-            imputed_df = postprocess_imputation(imputed_df, df_sample_thd)
+            imputed_df = postprocess_imputation(imputed_df, df_before_imputation)
         elif method == 'mice_linear':
             max_iter = params.get('max_iter', 20)
             imputed_df = miceLinearRegressionImputed(df_scaled, max_iter=max_iter)
-            imputed_df = postprocess_imputation(imputed_df, df_sample_thd)
+            imputed_df = postprocess_imputation(imputed_df, df_before_imputation)
         else:
             return jsonify({'error': 'Unknown imputation method'})
         
         # Store results
-        session['df_sample_imp'] = imputed_df
-        session['df_sample_thd'] = imputed_df
+        session['df_history'].append(imputed_df)
         
         # Calculate imputed mask: where was it null before and now it's not null
-        df_sample_pre_imp = session['df_sample_pre_imp']
-        imputed_mask = df_sample_pre_imp.isnull() & ~imputed_df.isnull()
+        imputed_mask = df_before_imputation.isnull() & ~imputed_df.isnull()
         session['imputed_mask'] = imputed_mask
 
         # Update processing steps
@@ -527,9 +553,10 @@ def apply_imputation():
         
         # Generate and return the updated heatmap data
         updated_heatmap = create_heatmap_BW(
-            df_sample_thd,
+            imputed_df,
             title='Missing Values Distribution (Imputed Highlighted)',
-            imputed=session['imputation_performed']
+            imputed=session['imputation_performed'],
+            null_mask=session.get('imputed_mask')
         )
 
         return jsonify({
@@ -541,34 +568,253 @@ def apply_imputation():
         })
         
     except Exception as e:
+        logging.error(f"Imputation failed for method {method}: {e}", exc_info=True)
         return jsonify({'error': f'Imputation failed: {str(e)}'})
 
 @app.route('/normalization')
 def normalization():
-    if session.get('df_sample') is None:
+    if not session.get('df_history'):
         flash('Please define sample data first')
         return redirect(url_for('metadata'))
     
-    df_sample = session['df_sample']
-    df_sample_thd = session.get('df_sample_thd', session['df_sample'])
+    # df_sample = session['df_history'][-1]
     
     # Initialize steps if they are empty
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = {}
-    # Missing values heatmap for imputation tab
-    plots['missing_heatmap'] = create_heatmap_BW(
-        df_sample_thd.isnull().astype(int),
-        title='Missing Values Distribution (Imputed Highlighted)',
-        imputed=session['imputation_performed']
-    )
+    df_current = session['df_history'][-1]
+    df_before = session['df_history'][0] # Assuming the first entry is the original sample data
+
+    # Initialize steps if they are empty
+    if 'processing_steps' not in session or not session['processing_steps']:
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
+
+    plots = get_normalization_plots(df_before, df_current)
 
     return render_template('normalization.html',
-                         original_shape=df_sample.shape,
-                         current_shape=df_sample_thd.shape,
-                         processing_steps=session['processing_steps'],
-                         plots=plots)
+                           original_shape=session['df_sample'].shape,
+                           current_shape=df_current.shape,
+                           processing_steps=session.get('processing_steps', []),
+                           plots=plots
+                          )
+
+
+@app.route('/apply_normalization', methods=['POST'])
+def apply_normalization():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No sample data available'})
+
+    method = request.json.get('method')
+    df = session['df_history'][-1]
+
+    try:
+        if method == 'tic':
+            normalized_df = tic_normalization(df)
+        elif method == 'mtic':
+            normalized_df = mtic_normalization(df)
+        elif method == 'median':
+            normalized_df = median_normalization(df)
+        elif method == 'quantile':
+            normalized_df = quantile_normalization(df)
+        elif method == 'pqn':
+            normalized_df = pqn_normalization(df)
+        else:
+            return jsonify({'error': 'Unknown normalization method'})
+
+        session['df_history'].append(normalized_df)
+        session['processing_steps'].append({
+            'icon': 'fa-chart-bar',
+            'color': 'text-success',
+            'message': f'Applied {method.upper()} normalization.'
+        })
+        session.modified = True
+
+        # Get the original data before normalization for comparison plots
+        df_before_normalization = session['df_history'][0]
+        
+        # Generate plots
+        plots = get_normalization_plots(df_before_normalization, normalized_df)
+
+        return jsonify({
+            'success': True,
+            'message': f'{method.upper()} normalization applied successfully.',
+            'new_shape': normalized_df.shape,
+            'steps': session['processing_steps'],
+            'plots': plots
+        })
+    except Exception as e:
+        return jsonify({'error': f'Normalization failed: {str(e)}'})
+
+@app.route('/transformation')
+def transformation():
+    if not session.get('df_history'):
+        flash('Please define sample data first')
+        return redirect(url_for('metadata'))
+    
+    df_current = session['df_history'][-1]
+    df_before = session['df_history'][0]
+
+    if 'processing_steps' not in session or not session['processing_steps']:
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
+
+    plots = get_transformation_plots(df_before, df_current)
+
+    return render_template('transformation.html',
+                           original_shape=session['df_sample'].shape,
+                           current_shape=df_current.shape,
+                           processing_steps=session.get('processing_steps', []),
+                           plots=plots
+                          )
+
+@app.route('/apply_transformation', methods=['POST'])
+def apply_transformation():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No sample data available'})
+
+    method = request.json.get('method')
+    params = request.json.get('params', {})
+    df = session['df_history'][-1]
+
+    try:
+        transformed_df = None
+        if method == 'log2':
+            transformed_df = log2_transform(df, pseudo_count=params.get('pseudo_count'))
+        elif method == 'log10':
+            transformed_df = log10_transform(df, pseudo_count=params.get('pseudo_count'))
+        elif method == 'sqrt':
+            transformed_df = sqrt_transform(df)
+        elif method == 'cube_root':
+            transformed_df = cube_root_transform(df)
+        elif method == 'arcsinh':
+            transformed_df = arcsinh_transform(df, cofactor=params.get('cofactor', 5))
+        elif method == 'glog':
+            transformed_df = glog_transform(df, lamb=params.get('lamb'))
+        elif method == 'yeo_johnson':
+            transformed_df = yeo_johnson_transform(df)
+        else:
+            return jsonify({'error': 'Unknown transformation method'})
+
+        session['df_history'].append(transformed_df)
+        session['processing_steps'].append({
+            'icon': 'fa-exchange-alt',
+            'color': 'text-info',
+            'message': f'Applied {method.replace("_", " ").title()} transformation.'
+        })
+        session.modified = True
+
+        df_before_transformation = session['df_history'][0]
+        plot_type = request.json.get('plot_type', 'boxplot')
+        plots = get_transformation_plots(df_before_transformation, transformed_df, plot_type)
+
+        return jsonify({
+            'success': True,
+            'message': f'{method.replace("_", " ").title()} transformation applied successfully.',
+            'new_shape': transformed_df.shape,
+            'steps': session['processing_steps'],
+            'plots': plots
+        })
+    except Exception as e:
+        logging.error(f"Transformation failed for method {method}: {e}", exc_info=True)
+        return jsonify({'error': f'Transformation failed: {str(e)}'})
+
+@app.route('/scaling')
+def scaling():
+    if not session.get('df_history'):
+        flash('Please define sample data first')
+        return redirect(url_for('metadata'))
+    
+    df_current = session['df_history'][-1]
+    df_before = session['df_history'][0]
+
+    if 'processing_steps' not in session or not session['processing_steps']:
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
+
+    plots = get_scaling_plots(df_before, df_current)
+
+    return render_template('scaling.html',
+                           original_shape=session['df_sample'].shape,
+                           current_shape=df_current.shape,
+                           processing_steps=session.get('processing_steps', []),
+                           plots=plots
+                          )
+
+@app.route('/apply_scaling', methods=['POST'])
+def apply_scaling():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No sample data available'})
+
+    method = request.json.get('method')
+    params = request.json.get('params', {})
+    df = session['df_history'][-1]
+
+    try:
+        scaled_df = None
+        if method == 'standard':
+            scaled_df = standard_scaling(df, with_mean=params.get('with_mean', True), with_std=params.get('with_std', True))
+        elif method == 'minmax':
+            scaled_df = minmax_scaling(df, feature_range=tuple(params.get('feature_range', [0, 1])))
+        elif method == 'pareto':
+            scaled_df = pareto_scaling(df)
+        elif method == 'range':
+            scaled_df = range_scaling(df)
+        elif method == 'robust':
+            scaled_df = robust_scaling(df)
+        elif method == 'vast':
+            scaled_df = vast_scaling(df)
+        else:
+            return jsonify({'error': 'Unknown scaling method'})
+
+        session['df_history'].append(scaled_df)
+        session['processing_steps'].append({
+            'icon': 'fa-compress-arrows-alt',
+            'color': 'text-warning',
+            'message': f'Applied {method.replace("_", " ").title()} scaling.'
+        })
+        session.modified = True
+
+        df_before_scaling = session['df_history'][0]
+        plot_type = request.json.get('plot_type', 'boxplot')
+        plots = get_scaling_plots(df_before_scaling, scaled_df, plot_type)
+
+        return jsonify({
+            'success': True,
+            'message': f'{method.replace("_", " ").title()} scaling applied successfully.',
+            'new_shape': scaled_df.shape,
+            'steps': session['processing_steps'],
+            'plots': plots
+        })
+    except Exception as e:
+        logging.error(f"Scaling failed for method {method}: {e}", exc_info=True)
+        return jsonify({'error': f'Scaling failed: {str(e)}'})
+
+@app.route('/get_distribution_plot/<plot_type>/<context>', methods=['GET'])
+def get_distribution_plot(plot_type, context):
+    if not session.get('df_history'):
+        return jsonify({'error': 'No data available'})
+    
+    if context == 'before':
+        df_sample = session['df_history'][0]
+    else:
+        df_sample = session['df_history'][-1]
+    
+    numeric_df = df_sample.select_dtypes(include=[np.number])
+    if numeric_df.empty:
+        return jsonify({'error': 'No numeric data to plot'})
+
+    try:
+        if plot_type == 'boxplot':
+            plot = create_boxplot(numeric_df, title='Current Data Distribution')
+        elif plot_type == 'violinplot':
+            plot = create_violinplot(numeric_df, title='Current Data Distribution')
+        else:
+            return jsonify({'error': 'Invalid plot type'})
+        
+        # Return direct Plotly-compatible structure
+        return jsonify({'plot': plot})
+        
+    except Exception as e:
+        return jsonify({'error': f'Plot generation failed: {str(e)}'})
 
 @app.route('/reset')
 def reset():
@@ -580,9 +826,7 @@ def reset():
     session['df_main'] = session['df_original']
     session['df_metadata'] = None
     session['df_sample'] = None
-    session['df_sample_thd'] = None
-    session['df_sample_imp'] = None
-    session['df_sample_pre_imp'] = None
+    session['df_history'] = []
     session['imputed_mask'] = None
     session['current_column'] = ''
     session['processing_steps'] = [] # Clear processing steps
@@ -591,36 +835,87 @@ def reset():
     flash('Data reset to original state')
     return redirect(url_for('summary'))
 
-@app.route('/reset_imputation', methods=['POST'])
-def reset_imputation():
-    if session.get('df_sample') is None:
-        return jsonify({'error': 'No sample data available to reset imputation'})
+def get_normalization_plots(df_before, df_after, plot_type='boxplot'):
+    """Helper function to generate all plots for the normalization page."""
+    plots = {}
+    # Before normalization
+    plots['dist_before'] = create_boxplot(df_before, 'Before Normalization') if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Normalization')
+    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Normalization')
+    
+    # After normalization
+    plots['dist_after'] = create_boxplot(df_after, 'After Normalization') if plot_type == 'boxplot' else create_violinplot(df_after, 'After Normalization')
+    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Normalization')
+    return plots
 
-    df_sample = session['df_sample']
-    session['df_sample_thd'] = df_sample.copy() # Reset to original sample data
-    session['df_sample_imp'] = None
-    session['df_sample_pre_imp'] = None
-    session['imputed_mask'] = None
+def get_transformation_plots(df_before, df_after, plot_type='boxplot'):
+    """Helper function to generate all plots for the transformation page."""
+    plots = {}
+    plots['dist_before'] = create_boxplot(df_before, 'Before Transformation') if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Transformation')
+    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Transformation')
+    
+    plots['dist_after'] = create_boxplot(df_after, 'After Transformation') if plot_type == 'boxplot' else create_violinplot(df_after, 'After Transformation')
+    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Transformation')
+    return plots
 
-    # Reset processing steps for imputation tab
-    session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
+def get_scaling_plots(df_before, df_after, plot_type='boxplot'):
+    """Helper function to generate all plots for the scaling page."""
+    plots = {}
+    plots['dist_before'] = create_boxplot(df_before, 'Before Scaling') if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Scaling')
+    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Scaling')
+    
+    plots['dist_after'] = create_boxplot(df_after, 'After Scaling') if plot_type == 'boxplot' else create_violinplot(df_after, 'After Scaling')
+    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Scaling')
+    return plots
+
+@app.route('/reset_sample_step', methods=['POST'])
+def reset_sample_step():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No sample data available to reset'})
+
+    context = request.json.get('context', 'imputation') # Default to imputation for safety
+
+    if len(session['df_history']) > 1:
+        session['df_history'].pop()
+        if session.get('processing_steps'):
+            session['processing_steps'].pop()
+    
     session.modified = True
-    session['imputation_performed'] = False # Reset imputation flag
 
-    return jsonify({
+    df_current = session['df_history'][-1]
+    response_data = {
         'success': True,
-        'message': 'Imputation data reset to original sample data.',
-        'new_shape': df_sample.shape,
-        'steps': session['processing_steps']
-    })
+        'message': 'Last processing step undone.',
+        'new_shape': df_current.shape,
+        'steps': session.get('processing_steps', [])
+    }
+
+    if context == 'imputation':
+        session['imputation_performed'] = False
+        session['imputed_mask'] = None
+        response_data['missing_heatmap'] = create_heatmap_BW(
+            df_current,
+            title='Missing Values Distribution',
+            imputed=False
+        )
+    elif context == 'normalization':
+        df_before = session['df_history'][0]
+        response_data['plots'] = get_normalization_plots(df_before, df_current)
+    elif context == 'transformation':
+        df_before = session['df_history'][0]
+        response_data['plots'] = get_transformation_plots(df_before, df_current)
+    elif context == 'scaling':
+        df_before = session['df_history'][0]
+        response_data['plots'] = get_scaling_plots(df_before, df_current)
+
+    return jsonify(response_data)
 
 @app.route('/analysis')
 def analysis():
-    if session.get('df_sample_thd') is None:
+    if not session.get('df_history'):
         flash('Please process sample data first')
         return redirect(url_for('imputation'))
     
-    df = session['df_sample_thd']
+    df = session['df_history'][-1]
     df_html = df.to_html(classes='table table-striped table-hover', table_id='analysis-table')
     
     return render_template('analysis.html', 
@@ -630,12 +925,12 @@ def analysis():
 
 @app.route('/comparison')
 def comparison():
-    if session.get('df_sample') is None:
+    if not session.get('df_history'):
         flash('Please define sample data first')
         return redirect(url_for('metadata'))
     
     df_original = session['df_sample']
-    df_processed = session.get('df_sample_thd', session['df_sample'])
+    df_processed = session['df_history'][-1]
     
     original_html = df_original.to_html(classes='table table-striped table-sm')
     processed_html = df_processed.to_html(classes='table table-striped table-sm')
@@ -648,10 +943,10 @@ def comparison():
 
 @app.route('/distribution/<column_name>')
 def distribution(column_name):
-    if session.get('df_sample_thd') is None:
+    if not session.get('df_history'):
         return jsonify({'error': 'No sample data available'})
     
-    df = session['df_sample_thd']
+    df = session['df_history'][-1]
     
     if column_name not in df.columns:
         return jsonify({'error': 'Column not found'})
@@ -665,145 +960,6 @@ def distribution(column_name):
     plot = create_distribution_plot(data_series, column_name)
     
     return jsonify({'plot': plot})
-
-# Helper functions for creating plots
-def create_bar_plot(x, y, title, xaxis_title, yaxis_title):
-    fig = go.Figure(data=[go.Bar(x=x, y=y, marker_color='#440154')])
-    fig.update_layout(
-        title=title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        template='plotly_white'
-    )
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_heatmap(data, title):
-    z_data = data.values.tolist()
-    x_data = data.columns.tolist() if hasattr(data, 'columns') else None
-    y_data = data.index.tolist() if hasattr(data, 'index') else None
-
-    fig = go.Figure(data=go.Heatmap(
-        z=z_data,
-        x=x_data,
-        y=y_data,
-        colorscale='Viridis'
-    ))
-    fig.update_layout(title=title, template='plotly_white')
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_heatmap_BW(data, title, imputed=False):
-    z_data = data.values.tolist()
-    x_data = data.columns.tolist() if hasattr(data, 'columns') else None
-    y_data = data.index.tolist() if hasattr(data, 'index') else None
-
-    if not imputed:
-        fig = go.Figure(data=go.Heatmap(
-            z=z_data,
-            x=x_data,
-            y=y_data,
-            colorscale='Purples_r',
-            showscale=False
-        ))
-    else:
-        fig = go.Figure(data=go.Heatmap(
-            z=z_data,
-            x=x_data,
-            y=y_data,
-            colorscale='Cividis',
-            showscale=False
-        ))
-    
-    fig.update_layout(title=title, template='plotly_white')
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_pie_chart(labels, values, title):
-    fig = go.Figure(data=[go.Pie(labels=labels, values=values)])
-    fig.update_layout(title=title, template='plotly_white')
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_distribution_plot(data_series, column_name):
-    fig = go.Figure()
-    
-    # Histogram
-    fig.add_trace(go.Histogram(
-        x=data_series,
-        nbinsx=30,
-        name='Histogram',
-        opacity=0.7
-    ))
-    
-    # Add statistics text
-    stats_text = f"n = {len(data_series)}<br>"
-    stats_text += f"μ = {data_series.mean():.4f}<br>"
-    stats_text += f"σ = {data_series.std():.4f}<br>"
-    stats_text += f"Skew = {data_series.skew():.4f}<br>"
-    stats_text += f"Kurt = {data_series.kurtosis():.4f}"
-    
-    fig.add_annotation(
-        text=stats_text,
-        xref="paper", yref="paper",
-        x=0.98, y=0.98,
-        showarrow=False,
-        align="right",
-        bgcolor="white",
-        bordercolor="black",
-        borderwidth=1
-    )
-    
-    fig.update_layout(
-        title=f'Distribution of {column_name}',
-        xaxis_title='Value',
-        yaxis_title='Frequency',
-        template='plotly_white'
-    )
-    
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_density_plot(data_series, column_name):
-    fig = go.Figure()
-
-    fig.add_trace(go.Histogram(
-        x=data_series.tolist(), # Convert pandas Series to a list
-        histnorm='probability density',
-        name='Density',
-        marker_color='#440154',
-        opacity=0.7
-    ))
-
-    fig.update_layout(
-        title=f'Density Plot of {column_name}',
-        xaxis_title='Value',
-        yaxis_title='Density',
-        template='plotly_white'
-    )
-
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_boxplot(df, title):
-    data = []
-    for col in df.columns:
-        # Boxplot for the column
-        data.append(go.Box(
-            y=df[col].tolist(), # Convert pandas Series to a list
-            name=col,
-            #boxpoints='all', # Display all points
-            jitter=0.3,      # Add jitter to points
-            pointpos=-1.8,   # Position points relative to box
-            marker_color='#440154', # Box color
-            line_color='#440154',   # Line color
-            hoverinfo='y',   # Show y-value on hover
-            showlegend=False
-        ))
-
-    fig = go.Figure(data=data)
-    fig.update_layout(
-        title=title,
-        yaxis_title='Value',
-        template='plotly_white',
-        showlegend=True, # Show legend for column names
-        hovermode='closest'
-    )
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 if __name__ == '__main__':
     app.run(debug=True)

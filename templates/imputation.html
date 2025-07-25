@@ -79,7 +79,7 @@
                             <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
                         </div>
                         <button type="button" class="btn btn-secondary w-100 mt-2" onclick="resetData()">
-                            <i class="fas fa-undo me-2"></i>Reset to Original Sample Data
+                            <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
                         </button>
                     </div>
                     <div class="mt-4">
@@ -133,15 +133,39 @@
         $('#descriptionText').text(methodDescriptions[method]);
         let paramsHtml = '';
         if (method === 'n_imputation') {
-            paramsHtml = `<div class="mb-3"><label for="nValue" class="form-label">N Value:</label><input type="number" class="form-control" id="nValue" value="0" step="0.01"></div>`;
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="nValue" class="form-label">N Value:</label>
+                <input type="number" class="form-control" id="nValue" value="0" step="0.01">
+            </div>`;
         } else if (method === 'miss_forest') {
-            paramsHtml = `<div class="mb-3"><label for="maxIter" class="form-label">Max Iterations:</label><input type="number" class="form-control" id="maxIter" value="10" min="1"></div><div class="mb-3"><label for="nEstimators" class="form-label">N Estimators:</label><input type="number" class="form-control" id="nEstimators" value="100" min="10"></div>`;
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="maxIter" class="form-label">Max Iterations:</label>
+                <input type="number" class="form-control" id="maxIter" value="10" min="1">
+            </div>
+            <div class="mb-3">
+                <label for="nEstimators" class="form-label">N Estimators:</label>
+                <input type="number" class="form-control" id="nEstimators" value="100" min="10">
+            </div>`;
         } else if (method === 'svd') {
-            paramsHtml = `<div class="mb-3"><label for="nComponents" class="form-label">N Components:</label><input type="number" class="form-control" id="nComponents" value="5" min="1"></div>`;
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="nComponents" class="form-label">N Components:</label>
+                <input type="number" class="form-control" id="nComponents" value="5" min="1">
+            </div>`;
         } else if (method === 'knn') {
-            paramsHtml = `<div class="mb-3"><label for="nNeighbors" class="form-label">N Neighbors:</label><input type="number" class="form-control" id="nNeighbors" value="2" min="1"></div>`;
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="nNeighbors" class="form-label">N Neighbors:</label>
+                <input type="number" class="form-control" id="nNeighbors" value="2" min="1">
+            </div>`;
         } else if (method === 'mice_bayesian' || method === 'mice_linear') {
-            paramsHtml = `<div class="mb-3"><label for="miceMaxIter" class="form-label">Max Iterations:</label><input type="number" class="form-control" id="miceMaxIter" value="20" min="1"></div>`;
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="miceMaxIter" class="form-label">Max Iterations:</label>
+                <input type="number" class="form-control" id="miceMaxIter" value="20" min="1">
+            </div>`;
         }
         $('#methodParameters').html(paramsHtml);
     }
@@ -196,7 +220,6 @@
     }
 
     function applyImputation() {
-        debugger;
         const method = $('#imputationMethod').val();
         const btn = $('#applyImputationBtn');
         const progress = $('#imputationProgress');
@@ -221,7 +244,7 @@
             contentType: 'application/json',
             data: JSON.stringify({method: method, params: params}),
             success: function(response) {
-                console.log('AJAX Success:', response);
+                // console.log('AJAX Success:', response);
                 showFlashMessage(response.message, response.message_category);
                 if (response.success) {
                     $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
@@ -243,7 +266,7 @@
                 showFlashMessage('An unexpected error occurred during imputation.', 'danger');
             },
             complete: function() {
-                console.log('AJAX Complete.');
+                // console.log('AJAX Complete.');
                 progress.hide();
                 btn.prop('disabled', false);
             }
@@ -251,17 +274,24 @@
     }
 
     function resetData() {
-        if (confirm('Are you sure you want to reset imputation changes? This will revert to the original sample data.')) {
+        if (confirm('Are you sure you want to undo the last processing step?')) {
             $.ajax({
-                url: '{{ url_for("reset_imputation") }}',
+                url: '{{ url_for("reset_sample_step") }}',
                 method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({context: 'imputation'}),
                 success: function(response) {
-                    showFlashMessage(response.message, 'success');
                     if (response.success) {
+                        showFlashMessage(response.message, 'success');
                         $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                         updateProcessingSteps(response.steps);
                         // Re-render heatmap after reset
-                        location.reload(); // Simple reload to re-render plots
+                        if (response.missing_heatmap) {
+                            const heatmapData = JSON.parse(response.missing_heatmap);
+                            Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout);
+                        }
+                    } else {
+                        showFlashMessage(response.error, 'danger');
                     }
                 },
                 error: function() {
@@ -279,7 +309,7 @@
     });
 
     document.addEventListener('DOMContentLoaded', function() {
-        // Render plots.data_types
+        // Render initial plots
         {% if plots.missing_heatmap %}
         try {
             const missingHeatmapData = {{ plots.missing_heatmap|safe }};

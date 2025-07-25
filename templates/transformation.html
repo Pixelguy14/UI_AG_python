@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}Transformation - Omics Data Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Flash Message Placeholder -->
+    <div id="imputation-flash-messages"></div>
+
+    <div class="row">
+        <!-- Controls -->
+        <div class="col-lg-4">
+            
+            <!-- Transformation Methods -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Transformation Methods</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="transformationMethod" class="form-label">Method:</label>
+                        <select class="form-select" id="transformationMethod" onchange="updateTransformationOptions()">
+                            <option value="log2">Log2 Transformation</option>
+                            <option value="log10">Log10 Transformation</option>
+                            <option value="sqrt">Square Root Transformation</option>
+                            <option value="cube_root">Cube Root Transformation</option>
+                            <option value="arcsinh">Arcsinh Transformation</option>
+                            <option value="glog">Generalized Log (glog) Transformation</option>
+                            <option value="yeo_johnson">Yeo-Johnson Transformation</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info" id="methodDescription"><small id="descriptionText"></small></div>
+                    <div id="methodParameters"></div>
+                    <div class="progress mt-3" id="transformationProgress" style="display: none;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                    </div>
+                    <button type="button" id="applyTransformationBtn" class="btn btn-primary w-100 mt-3" onclick="applyTransformation()">
+                        <i class="fas fa-magic me-2"></i>Apply Transformation
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Data Information -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Original Sample Data:</h6>
+                            <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Current Processed Data:</h6>
+                            <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
+                        </div>
+                        <button type="button" class="btn btn-secondary w-100 mt-2" onclick="resetData()">
+                            <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
+                        </button>
+                    </div>
+                    <div class="mt-4">
+                        <h6>Processing Steps:</h6>
+                        <ul id="processingSteps" class="list-group list-group-flush">
+                            {% for step in processing_steps %}
+                                <li class="list-group-item"><i class="fas {{ step.icon }} {{ step.color }} me-2"></i>{{ step.message }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <!-- Boxplot Distribution (Before)-->
+            <!-- Boxplot Distribution (Before)-->
+            <div class="row mt-4">
+                <div class="col-lg-12 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header  d-flex justify-content-between align-items-center">Boxplot Distribution Plot Before Normalization
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-light active" id="boxplot-btn-before">BoxPlot</button>
+                                <button type="button" class="btn btn-light" id="violinplot-btn-before">ViolinPlot</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="boxplotDistributionPlot" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boxplot Distribution (After)-->
+            <div class="row mt-4">
+                <div class="col-lg-12 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header  d-flex justify-content-between align-items-center">Boxplot Distribution Plot After Normalization
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-light active" id="boxplot-btn-after">BoxPlot</button>
+                                <button type="button" class="btn btn-light" id="violinplot-btn-after">ViolinPlot</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="boxplotDistributionPlotNorm" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- PCA Plots -->
+            <div class="row mt-4">
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">PCA Plot Before Transformation</div>
+                        <div class="card-body">
+                            <div id="pcaPlotBefore" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">PCA Plot After Transformation</div>
+                        <div class="card-body">
+                            <div id="pcaPlotAfter" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const methodDescriptions = {
+        'log2': 'Applies log2 transformation. A small pseudo-count is added to handle zeros. Not suitable for negative values.',
+        'log10': 'Applies log10 transformation. A small pseudo-count is added to handle zeros. Not suitable for negative values.',
+        'sqrt': 'Applies square root transformation. Negative values will be converted to NaN. Not suitable for negative values.',
+        'cube_root': 'Applies cube root transformation. This transformation handles negative values.',
+        'arcsinh': 'Applies inverse hyperbolic sine (arcsinh) transformation. Handles zero and negative values gracefully.',
+        'glog': 'Applies generalized log (glog) transformation. Handles zero and negative values. A lambda parameter can be tuned.',
+        'yeo_johnson': 'Applies Yeo-Johnson power transformation. Works with positive, zero, and negative values.'
+    };
+
+    let currentPlotTypeBefore = 'boxplot';
+    let currentPlotTypeAfter = 'boxplot';
+
+    function showFlashMessage(message, category) {
+        const flashDiv = $('#imputation-flash-messages');
+        const alertHtml = `
+            <div class="alert alert-${category} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>`;
+        flashDiv.html(alertHtml);
+    }
+
+    function updateTransformationOptions() {
+        const method = $('#transformationMethod').val();
+        $('#descriptionText').text(methodDescriptions[method]);
+        let paramsHtml = '';
+        if (method === 'log2' || method === 'log10') {
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="pseudoCount" class="form-label">Pseudo Count (optional):</label>
+                <input type="number" class="form-control" id="pseudoCount" step="any" placeholder="e.g., 0.5 * min_positive">
+            </div>`;
+        } else if (method === 'arcsinh') {
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="cofactor" class="form-label">Cofactor (default: 5):</label>
+                <input type="number" class="form-control" id="cofactor" value="5" min="0.1" step="any">
+            </div>`;
+        } else if (method === 'glog') {
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="lambda" class="form-label">Lambda (optional):</label>
+                <input type="number" class="form-control" id="lambda" step="any" placeholder="e.g., 1e-9">
+            </div>`;
+        }
+        $('#methodParameters').html(paramsHtml);
+    }
+
+    function updateProcessingSteps(steps) {
+        const stepsList = $('#processingSteps');
+        stepsList.empty();
+        steps.forEach(function(step) {
+            const listItem = `<li class="list-group-item"><i class="fas ${step.icon} ${step.color} me-2"></i>${step.message}</li>`;
+            stepsList.append(listItem);
+        });
+    }
+
+    function applyTransformation() {
+        const method = $('#transformationMethod').val();
+        const plotType = $('#boxplot-btn').hasClass('active') ? 'boxplot' : 'violinplot';
+        const btn = $('#applyTransformationBtn');
+        const progress = $('#transformationProgress');
+
+        progress.show();
+        btn.prop('disabled', true);
+        
+        let params = {};
+        if (method === 'log2' || method === 'log10') {
+            const pseudoCount = $('#pseudoCount').val();
+            if (pseudoCount !== '') params.pseudo_count = parseFloat(pseudoCount);
+        } else if (method === 'arcsinh') {
+            params.cofactor = parseFloat($('#cofactor').val());
+        } else if (method === 'glog') {
+            const lambda = $('#lambda').val();
+            if (lambda !== '') params.lamb = parseFloat(lambda);
+        }
+
+        $.ajax({
+            url: '{{ url_for("apply_transformation") }}',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({method: method, plot_type: plotType, params: params}),
+            success: function(response) {
+                if (response.success) {
+                    showFlashMessage(response.message, 'success');
+                    $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                    updateProcessingSteps(response.steps);
+                    renderPlots(response.plots);
+                } else {
+                    showFlashMessage(response.error, 'danger');
+                }
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
+                showFlashMessage(errorMsg, 'danger');
+            },
+            complete: function() {
+                progress.hide();
+                btn.prop('disabled', false);
+            }
+        });
+    }
+
+    function resetData() {
+        if (confirm('Are you sure you want to undo the last processing step?')) {
+            $.ajax({
+                url: '{{ url_for("reset_sample_step") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({context: 'transformation'}),
+                success: function(response) {
+                    if (response.success) {
+                        showFlashMessage(response.message, 'success');
+                        $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                        updateProcessingSteps(response.steps);
+                        renderPlots(response.plots);
+                    } else {
+                        showFlashMessage(response.error, 'danger');
+                    }
+                },
+                error: function() {
+                    showFlashMessage('An error occurred while resetting data.', 'danger');
+                }
+            });
+        }
+    }
+
+    function renderPlot(plotId, plotData) {
+        const plotDiv = $(`#${plotId}`);
+        if (plotData && plotData.data) {
+            try {
+                Plotly.newPlot(plotId, plotData.data, plotData.layout);
+            } catch (e) {
+                plotDiv.html(`<div class="alert alert-danger">Plot error: ${e}</div>`);
+            }
+        } else {
+            plotDiv.html('<div class="alert alert-warning">No plot data available.</div>');
+        }
+    }
+
+    function renderPlots(plots) {
+        renderPlot('boxplotDistributionPlot', plots.dist_before);
+        renderPlot('boxplotDistributionPlotNorm', plots.dist_after); // Renamed from Norm to After for consistency
+        renderPlot('pcaPlotBefore', plots.pca_before);
+        renderPlot('pcaPlotAfter', plots.pca_after);
+    }
+
+    function updatePlot(plotType, context) {
+        const plotDivId = context === 'before' ? 'boxplotDistributionPlot' : 'boxplotDistributionPlotNorm';
+        const plotDiv = document.getElementById(plotDivId);
+        const url = `/get_distribution_plot/${plotType}/${context}`;
+
+        $.get(url)
+            .done(function(data) {
+                if (data.error) {
+                    $(plotDiv).html(`<div class="alert alert-danger">${data.error}</div>`);
+                    return;
+                }
+                const plotData = JSON.parse(data.plot);
+                Plotly.newPlot(plotDiv, plotData.data, plotData.layout);
+            })
+            .fail(function() {
+                $(plotDiv).html('<div class="alert alert-danger">Error loading plot.</div>');
+            });
+    }
+
+    function updateButtonStates() {
+        $('#boxplot-btn-before').toggleClass('active', currentPlotTypeBefore === 'boxplot');
+        $('#violinplot-btn-before').toggleClass('active', currentPlotTypeBefore === 'violinplot');
+        $('#boxplot-btn-after').toggleClass('active', currentPlotTypeAfter === 'boxplot');
+        $('#violinplot-btn-after').toggleClass('active', currentPlotTypeAfter === 'violinplot');
+    }
+
+    $(document).ready(function() {
+        updateNormalizationOptions();
+        {% if plots %}
+        try {
+            renderPlots({{ plots|tojson|safe }});
+        } catch (e) {
+            console.error('Error rendering initial plots:', e);
+        }
+        {% endif %}
+
+        // Button listeners
+        $('#boxplot-btn-before').click(function() {
+            currentPlotTypeBefore = 'boxplot';
+            updateButtonStates();
+            updatePlot('boxplot', 'before');
+        });
+
+        $('#violinplot-btn-before').click(function() {
+            currentPlotTypeBefore = 'violinplot';
+            updateButtonStates();
+            updatePlot('violinplot', 'before');
+        });
+
+        $('#boxplot-btn-after').click(function() {
+            currentPlotTypeAfter = 'boxplot';
+            updateButtonStates();
+            updatePlot('boxplot', 'after');
+        });
+
+        $('#violinplot-btn-after').click(function() {
+            currentPlotTypeAfter = 'violinplot';
+            updateButtonStates();
+            updatePlot('violinplot', 'after');
+        });
+    });
+</script>
+{% endblock %}

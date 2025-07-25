@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Scaling - Omics Data Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Flash Message Placeholder -->
+    <div id="imputation-flash-messages"></div>
+
+    <div class="row">
+        <!-- Controls -->
+        <div class="col-lg-4">
+            
+            <!-- Scaling Methods -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-compress-arrows-alt me-2"></i>Scaling Methods</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="scalingMethod" class="form-label">Method:</label>
+                        <select class="form-select" id="scalingMethod" onchange="updateScalingOptions()">
+                            <option value="standard">Standard Scaling (Z-score)</option>
+                            <option value="minmax">Min-Max Scaling</option>
+                            <option value="pareto">Pareto Scaling</option>
+                            <option value="range">Range Scaling</option>
+                            <option value="robust">Robust Scaling</option>
+                            <option value="vast">VAST Scaling</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info" id="methodDescription"><small id="descriptionText"></small></div>
+                    <div id="methodParameters"></div>
+                    <div class="progress mt-3" id="scalingProgress" style="display: none;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                    </div>
+                    <button type="button" id="applyScalingBtn" class="btn btn-primary w-100 mt-3" onclick="applyScaling()">
+                        <i class="fas fa-magic me-2"></i>Apply Scaling
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Data Information -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Original Sample Data:</h6>
+                            <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Current Processed Data:</h6>
+                            <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
+                        </div>
+                        <button type="button" class="btn btn-secondary w-100 mt-2" onclick="resetData()">
+                            <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
+                        </button>
+                    </div>
+                    <div class="mt-4">
+                        <h6>Processing Steps:</h6>
+                        <ul id="processingSteps" class="list-group list-group-flush">
+                            {% for step in processing_steps %}
+                                <li class="list-group-item"><i class="fas {{ step.icon }} {{ step.color }} me-2"></i>{{ step.message }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <!-- Boxplot Distribution (Before)-->
+            <div class="row mt-4">
+                <div class="col-lg-12 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header  d-flex justify-content-between align-items-center">Boxplot Distribution Plot Before Normalization
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-light active" id="boxplot-btn-before">BoxPlot</button>
+                                <button type="button" class="btn btn-light" id="violinplot-btn-before">ViolinPlot</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="boxplotDistributionPlot" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boxplot Distribution (After)-->
+            <div class="row mt-4">
+                <div class="col-lg-12 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header  d-flex justify-content-between align-items-center">Boxplot Distribution Plot After Normalization
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-light active" id="boxplot-btn-after">BoxPlot</button>
+                                <button type="button" class="btn btn-light" id="violinplot-btn-after">ViolinPlot</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="boxplotDistributionPlotNorm" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- PCA Plots -->
+            <div class="row mt-4">
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">PCA Plot Before Scaling</div>
+                        <div class="card-body">
+                            <div id="pcaPlotBefore" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6 mb-4">
+                    <div class="plot-container card">
+                        <div class="card-header">PCA Plot After Scaling</div>
+                        <div class="card-body">
+                            <div id="pcaPlotAfter" style="min-height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const methodDescriptions = {
+        'standard': 'Scales each feature (row) to mean=0 and std=1 across samples.',
+        'minmax': 'Scales each feature (row) to a specified range (default [0, 1]).',
+        'pareto': 'Compromise between Z-score and no scaling: (x - mean) / √std.',
+        'range': 'Scales features to [-1, 1] while preserving sign.',
+        'robust': 'Resistant to outliers: (x - median) / IQR.',
+        'vast': 'Reduces the influence of noisy variables: ((x - mean) / std) * (mean / std).',
+    };
+
+    function showFlashMessage(message, category) {
+        const flashDiv = $('#imputation-flash-messages');
+        const alertHtml = `
+            <div class="alert alert-${category} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>`;
+        flashDiv.html(alertHtml);
+    }
+
+    function updateScalingOptions() {
+        const method = $('#scalingMethod').val();
+        $('#descriptionText').text(methodDescriptions[method]);
+        let paramsHtml = '';
+        if (method === 'standard') {
+            paramsHtml = `
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="withMean" checked>
+                <label class="form-check-label" for="withMean">With Mean</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="withStd" checked>
+                <label class="form-check-label" for="withStd">With Standard Deviation</label>
+            </div>`;
+        } else if (method === 'minmax') {
+            paramsHtml = `
+            <div class="mb-3">
+                <label for="featureRangeMin" class="form-label">Feature Range Min:</label>
+                <input type="number" class="form-control" id="featureRangeMin" value="0" step="any">
+            </div>
+            <div class="mb-3">
+                <label for="featureRangeMax" class="form-label">Feature Range Max:</label>
+                <input type="number" class="form-control" id="featureRangeMax" value="1" step="any">
+            </div>`;
+        }
+        $('#methodParameters').html(paramsHtml);
+    }
+
+    function updateProcessingSteps(steps) {
+        const stepsList = $('#processingSteps');
+        stepsList.empty();
+        steps.forEach(function(step) {
+            const listItem = `<li class="list-group-item"><i class="fas ${step.icon} ${step.color} me-2"></i>${step.message}</li>`;
+            stepsList.append(listItem);
+        });
+    }
+
+    function applyScaling() {
+        const method = $('#scalingMethod').val();
+        const plotType = $('#boxplot-btn').hasClass('active') ? 'boxplot' : 'violinplot';
+        const btn = $('#applyScalingBtn');
+        const progress = $('#scalingProgress');
+
+        progress.show();
+        btn.prop('disabled', true);
+        
+        let params = {};
+        if (method === 'standard') {
+            params.with_mean = $('#withMean').prop('checked');
+            params.with_std = $('#withStd').prop('checked');
+        } else if (method === 'minmax') {
+            params.feature_range = [
+                parseFloat($('#featureRangeMin').val()),
+                parseFloat($('#featureRangeMax').val())
+            ];
+        }
+
+        $.ajax({
+            url: '{{ url_for("apply_scaling") }}',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({method: method, plot_type: plotType, params: params}),
+            success: function(response) {
+                if (response.success) {
+                    showFlashMessage(response.message, 'success');
+                    $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                    updateProcessingSteps(response.steps);
+                    renderPlots(response.plots);
+                } else {
+                    showFlashMessage(response.error, 'danger');
+                }
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
+                showFlashMessage(errorMsg, 'danger');
+            },
+            complete: function() {
+                progress.hide();
+                btn.prop('disabled', false);
+            }
+        });
+    }
+
+    function resetData() {
+        if (confirm('Are you sure you want to undo the last processing step?')) {
+            $.ajax({
+                url: '{{ url_for("reset_sample_step") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({context: 'scaling'}),
+                success: function(response) {
+                    if (response.success) {
+                        showFlashMessage(response.message, 'success');
+                        $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                        updateProcessingSteps(response.steps);
+                        renderPlots(response.plots);
+                    } else {
+                        showFlashMessage(response.error, 'danger');
+                    }
+                },
+                error: function() {
+                    showFlashMessage('An error occurred while resetting data.', 'danger');
+                }
+            });
+        }
+    }
+
+    function renderPlot(plotId, plotData) {
+        const plotDiv = $(`#${plotId}`);
+        if (plotData && plotData.data) {
+            try {
+                Plotly.newPlot(plotId, plotData.data, plotData.layout);
+            } catch (e) {
+                plotDiv.html(`<div class="alert alert-danger">Plot error: ${e}</div>`);
+            }
+        } else {
+            plotDiv.html('<div class="alert alert-warning">No plot data available.</div>');
+        }
+    }
+
+    function renderPlots(plots) {
+        renderPlot('boxplotDistributionPlot', plots.dist_before);
+        renderPlot('boxplotDistributionPlotNorm', plots.dist_after); // Renamed from Norm to After for consistency
+        renderPlot('pcaPlotBefore', plots.pca_before);
+        renderPlot('pcaPlotAfter', plots.pca_after);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        updateScalingOptions();
+        {% if plots %}
+        try {
+            renderPlots({{ plots|tojson|safe }});
+        } catch (e) {
+            console.error('Error rendering initial plots:', e);
+        }
+        {% endif %}
+    });
+</script>
+{% endblock %}

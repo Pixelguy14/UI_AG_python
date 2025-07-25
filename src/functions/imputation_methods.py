@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.impute import KNNImputer
-from sklearn.experimental import enable_iterative_imputer # Has to stay in order for IterativeImputer to work
-from sklearn.impute import IterativeImputer
-from missingpy import MissForest
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import TruncatedSVD
-from sklearn.linear_model import BayesianRidge, LinearRegression
+from sklearn.impute import KNNImputer # type: ignore[import]
+from sklearn.experimental import enable_iterative_imputer  # type: ignore # Has to stay in order for IterativeImputer to work
+from sklearn.impute import IterativeImputer # type: ignore[import]
+from missingpy import MissForest # type: ignore[import]
+from sklearn.preprocessing import StandardScaler # type: ignore[import]
+from sklearn.decomposition import TruncatedSVD # type: ignore[import]
+from sklearn.linear_model import BayesianRidge, LinearRegression # type: ignore[import]
 
 ## Univariate methods for numerical columns
 

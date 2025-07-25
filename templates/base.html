@@ -10,7 +10,7 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <!-- Plotly.js -->
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     
     <style>
         :root {
@@ -176,8 +176,8 @@
                             <li><a class="dropdown-item" href="{{ url_for('imputation') }}"><i class="fas fa-tools me-1"></i>Thresholding & Imputation</a></li>
                             <li><a class="dropdown-item" href="#">Filter Detection Frequency</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('normalization') }}">Normalization</a></li>
-                            <li><a class="dropdown-item" href="#">Log Transformation</a></li>
-                            <li><a class="dropdown-item" href="#">Scaling</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('transformation') }}">Log Transformation</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('scaling') }}">Scaling</a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">

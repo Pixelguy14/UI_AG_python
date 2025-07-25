@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, session, flash, redirect, url_for, jsonify
-import pandas as pd
+# import pandas as pd
 import plotly
 import plotly.graph_objs as go
 import json
