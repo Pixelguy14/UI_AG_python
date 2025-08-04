@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Summary - Omics Data Analysis{% endblock %}
+{% block title %}Summary - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -27,15 +27,17 @@
         <!-- Plots -->
         <div class="col-lg-12">
             <div class="row">
-                <!-- Data Types Distribution -->
+                <!-- All Columns Density Plot -->
+                {% if plots.all_columns_density %}
                 <div class="col-lg-6 mb-4">
                     <div class="plot-container card">
-                        <div class="card-header">Data Types Distribution</div>
+                        <div class="card-header">Density Plot of All Sample Columns</div>
                         <div class="card-body">
-                            <div id="dataTypesPlot"></div>
+                            <div id="allColumnsDensityPlot"></div>
                         </div>
                     </div>
                 </div>
+                {% endif %}
                 
                 <!-- Mean Intensity (if available) -->
                 {% if plots.mean_intensity %}
@@ -98,12 +100,12 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Render plots
-        {% if plots.data_types %}
+        {% if plots.all_columns_density %}
         try {
-            const dataTypesData = {{ plots.data_types|safe }};
-            Plotly.newPlot('dataTypesPlot', dataTypesData.data, dataTypesData.layout);
+            const allColumnsDensityData = {{ plots.all_columns_density|safe }};
+            Plotly.newPlot('allColumnsDensityPlot', allColumnsDensityData.data, allColumnsDensityData.layout);
         } catch (e) {
-            console.error('Error rendering data types plot:', e);
+            console.error('Error rendering all columns density plot:', e);
         }
         {% endif %}
         

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Upload File - Omics Data Analysis{% endblock %}
+{% block title %}Upload File - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -79,6 +79,12 @@
                     <div class="table-responsive">
                         {{ df_preview_html|safe }}
                     </div>
+                    {% if data_types_plot %}
+                    <div class="mt-4">
+                        <h5 class="mb-3">Data Types Distribution</h5>
+                        <div id="dataTypesPlot"></div>
+                    </div>
+                    {% endif %}
                     <div class="d-flex justify-content-end mt-3">
                         <a href="{{ url_for('metadata') }}" class="btn btn-success">
                             Continue to Define Metadata
@@ -123,4 +129,19 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if data_types_plot %}
+        try {
+            const dataTypesData = {{ data_types_plot|safe }};
+            Plotly.newPlot('dataTypesPlot', dataTypesData.data, dataTypesData.layout);
+        } catch (e) {
+            console.error('Error rendering data types plot:', e);
+        }
+        {% endif %}
+    });
+</script>
 {% endblock %}

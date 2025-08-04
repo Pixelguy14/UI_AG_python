@@ -11,7 +11,7 @@ def loadFile(fileName):
         return loadDF_Consensus(fileName) # For consensusXML
     elif extension.lower() == ".featurexml":
         print("Loading a featureXML file")
-        return loadDF_Consensus(fileName) # For featureXML
+        return loadDF_Feature(fileName) # For featureXML
     elif extension.lower() == ".tsv":
         print("Loading a TSV file")
         return loadDF_TSV_CSV(fileName, '\t') # For tsv
@@ -20,6 +20,7 @@ def loadFile(fileName):
         return loadDF_TSV_CSV(fileName) # For csv
     else:
         return pd.DataFrame() # Explicitly return empty dataframe
+
 
 def loadDF_Consensus(myConsensusXML):
     try:
@@ -193,10 +194,10 @@ def loadDF_TSV_CSV(myTSVCSVFile,separator=None):
         # Use pandas to read the TSV file, specifying tab as the separator
         # If there is not TSV, ignore separator
         if not separator:
-            df = pd.read_csv(myTSVCSVFile)
+            df = pd.read_csv(myTSVCSVFile, index_col=0) # Set first column as index
             print(f"Successfully loaded CSV file: {myTSVCSVFile}")
         else:
-            df = pd.read_csv(myTSVCSVFile, sep=separator)
+            df = pd.read_csv(myTSVCSVFile, sep=separator, index_col=0) # Set first column as index
             print(f"Successfully loaded TSV file: {myTSVCSVFile}")
         return df
     except FileNotFoundError:

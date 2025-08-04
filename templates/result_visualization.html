@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Result Visualization{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-fire me-2"></i>Volcano Plot</h5>
+                </div>
+                <div class="card-body">
+                    <div id="volcanoPlot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-th me-2"></i>Clustergram</h5>
+                </div>
+                <div class="card-body">
+                    <div id="clustergramPlot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Render Volcano Plot
+        {% if volcano_plot %}
+        try {
+            const volcanoData = {{ volcano_plot|safe }};
+            Plotly.newPlot('volcanoPlot', volcanoData.data, volcanoData.layout);
+        } catch (e) {
+            console.error('Error rendering volcano plot:', e);
+        }
+        {% else %}
+            document.getElementById('volcanoPlot').innerHTML = '<div class="alert alert-warning">No data available for volcano plot. Please run a differential analysis first.</div>';
+        {% endif %}
+
+        // Render Clustergram
+        {% if clustergram_plot %}
+        try {
+            const clustergramData = {{ clustergram_plot|safe }};
+            Plotly.newPlot('clustergramPlot', clustergramData.data, clustergramData.layout);
+        } catch (e) {
+            console.error('Error rendering clustergram:', e);
+        }
+        {% else %}
+            document.getElementById('clustergramPlot').innerHTML = '<div class="alert alert-warning">No significant features found to generate a clustergram.</div>';
+        {% endif %}
+    });
+</script>
+{% endblock %}

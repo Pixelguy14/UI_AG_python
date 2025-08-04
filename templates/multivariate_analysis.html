@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Multivariate Analysis - Metabolomic Data Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Comparison Plots -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-end">
+                        <div class="col-md-4">
+                            <label for="plotSelector1" class="form-label"><b>Select Plot 1:</b></label>
+                            <select id="plotSelector1" class="form-select">
+                                {% for index, message in history_options %}
+                                    <option value="{{ index }}">{{ message }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="plotSelector2" class="form-label"><b>Select Plot 2:</b></label>
+                            <select id="plotSelector2" class="form-select">
+                                {% for index, message in history_options %}
+                                    <option value="{{ index }}" {% if index == selected_history_index %}selected{% endif %}>{{ message }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="plotType" class="form-label"><b>Plot Type:</b></label>
+                            <select id="plotType" class="form-select">
+                                <option value="pca">PCA</option>
+                                <option value="plsda">PLS-DA</option>
+                                <option value="oplsda">OPLS-DA</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary w-100" onclick="loadPlots()">Compare</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0" id="plotTitle1">Plot 1</h5></div>
+                <div class="card-body"><div id="plotContainer1" style="min-height: 500px;"></div></div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0" id="plotTitle2">Plot 2</h5></div>
+                <div class="card-body"><div id="plotContainer2" style="min-height: 500px;"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Section -->
+    <div class="row">
+        <!-- HCA -->
+        <div class="col-lg mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0">Hierarchical Clustering Analysis (HCA)</h5></div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Distance Metric</h6>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="distance_metric" id="euclidean" value="euclidean" checked><label class="form-check-label" for="euclidean">Euclidean</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="distance_metric" id="cityblock" value="cityblock"><label class="form-check-label" for="cityblock">Manhattan</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="distance_metric" id="chebyshev" value="chebyshev"><label class="form-check-label" for="chebyshev">Maximum</label></div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Linkage Method</h6>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="linkage_method" id="average" value="average" checked><label class="form-check-label" for="average">Average</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="linkage_method" id="single" value="single"><label class="form-check-label" for="single">Single</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="linkage_method" id="complete" value="complete"><label class="form-check-label" for="complete">Complete</label></div>
+                        </div>
+                    </div>
+                    <div id="hcaPlotContainer" style="width: 100%; height: 600px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function loadPlots() {
+    const index1 = $('#plotSelector1').val();
+    const index2 = $('#plotSelector2').val();
+    const plotType = $('#plotType').val();
+
+    $('#plotTitle1').text($('#plotSelector1 option:selected').text() + ' - ' + plotType.toUpperCase());
+    $('#plotTitle2').text($('#plotSelector2 option:selected').text() + ' - ' + plotType.toUpperCase());
+
+    fetchAndRenderPlot(index1, 'plotContainer1', plotType);
+    fetchAndRenderPlot(index2, 'plotContainer2', plotType);
+    fetchAndRenderHca();
+}
+
+function fetchAndRenderPlot(historyIndex, containerId, plotType) {
+    let url;
+    if (plotType === 'pca') url = `/get_pca_plot/${historyIndex}`;
+    else if (plotType === 'plsda') url = `/get_plsda_plot/${historyIndex}`;
+    else if (plotType === 'oplsda') url = `/get_oplsda_plot/${historyIndex}`;
+
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(response) {
+            if (response.plot) {
+                const plotData = JSON.parse(response.plot);
+                Plotly.newPlot(containerId, plotData.data, plotData.layout);
+            } else {
+                $(`#${containerId}`).html(`<div class="alert alert-warning">Plot not available.</div>`);
+            }
+        },
+        error: () => $(`#${containerId}`).html(`<div class="alert alert-danger">Error loading plot.</div>`)
+    });
+}
+
+function fetchAndRenderHca() {
+    const payload = {
+        distance_metric: $('input[name="distance_metric"]:checked').val(),
+        linkage_method: $('input[name="linkage_method"]:checked').val()
+    };
+
+    $.ajax({
+        url: '/get_hca_plot/',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success: function(response) {
+            if (response.plot) {
+                const plotData = JSON.parse(response.plot);
+                Plotly.newPlot('hcaPlotContainer', plotData.data, plotData.layout);
+            } else {
+                $('#hcaPlotContainer').html('<div class="alert alert-warning">HCA plot not available.</div>');
+            }
+        },
+        error: () => $('#hcaPlotContainer').html('<div class="alert alert-danger">Error loading HCA plot.</div>')
+    });
+}
+
+$(document).ready(function() {
+    loadPlots();
+    $('input[name="distance_metric"], input[name="linkage_method"]').on('change', fetchAndRenderHca);
+    $('#runPermanovaBtn').on('click', runPermanova);
+});
+</script>
+{% endblock %}

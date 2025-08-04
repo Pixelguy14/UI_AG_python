@@ -1,12 +1,24 @@
 {% extends "base.html" %}
 
-{% block title %}Analysis - Omics Data Analysis{% endblock %}
+{% block title %}Analysis - Metabolomic Data Analysis{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
 {% endblock %}
 
 {% block content %}
+<style>
+    #analysis-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    #analysis-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        text-align: left;
+    }
+</style>
 <div class="container-fluid">
     <div class="row">
         <!--Sample DataFrame-->

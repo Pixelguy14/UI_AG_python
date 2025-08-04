@@ -1,18 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Transformation - Omics Data Analysis{% endblock %}
+{% block title %}Transformation - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <!-- Flash Message Placeholder -->
     <div id="imputation-flash-messages"></div>
 
+    <!-- First Row: Controls + Data Info -->
     <div class="row">
-        <!-- Controls -->
-        <div class="col-lg-4">
-            
-            <!-- Transformation Methods -->
-            <div class="card">
+        <!-- Transformation Methods -->
+        <div class="col-lg-6">
+            <div class="card h-100">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Transformation Methods</h5>
                 </div>
@@ -42,8 +41,8 @@
         </div>
         
         <!-- Data Information -->
-        <div class="col-lg-8">
-            <div class="card">
+        <div class="col-lg-6">
+            <div class="card h-100">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data Information</h5>
                 </div>
@@ -57,11 +56,11 @@
                             <h6>Current Processed Data:</h6>
                             <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
                         </div>
-                        <button type="button" class="btn btn-secondary w-100 mt-2" onclick="resetData()">
-                            <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
-                        </button>
                     </div>
-                    <div class="mt-4">
+                    <button type="button" class="btn btn-secondary w-100 mt-3" onclick="resetData()">
+                        <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
+                    </button>
+                    <div class="mt-3">
                         <h6>Processing Steps:</h6>
                         <ul id="processingSteps" class="list-group list-group-flush">
                             {% for step in processing_steps %}
@@ -71,57 +70,56 @@
                     </div>
                 </div>
             </div>
-            <!-- Boxplot Distribution (Before)-->
-            <!-- Boxplot Distribution (Before)-->
-            <div class="row mt-4">
-                <div class="col-lg-12 mb-4">
-                    <div class="plot-container card">
-                        <div class="card-header  d-flex justify-content-between align-items-center">Boxplot Distribution Plot Before Normalization
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-light active" id="boxplot-btn-before">BoxPlot</button>
-                                <button type="button" class="btn btn-light" id="violinplot-btn-before">ViolinPlot</button>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div id="boxplotDistributionPlot" style="min-height: 400px;"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        </div>
+    </div>
 
-            <!-- Boxplot Distribution (After)-->
-            <div class="row mt-4">
-                <div class="col-lg-12 mb-4">
-                    <div class="plot-container card">
-                        <div class="card-header  d-flex justify-content-between align-items-center">Boxplot Distribution Plot After Normalization
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-light active" id="boxplot-btn-after">BoxPlot</button>
-                                <button type="button" class="btn btn-light" id="violinplot-btn-after">ViolinPlot</button>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div id="boxplotDistributionPlotNorm" style="min-height: 400px;"></div>
-                        </div>
+    <!-- Second Row: Before Transformation Plots -->
+    <div class="row mt-4">
+        <div class="col-lg-8">
+            <div class="plot-container card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    Boxplot Distribution Plot Before Processing
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-light active" id="boxplot-btn-before">BoxPlot</button>
+                        <button type="button" class="btn btn-light" id="violinplot-btn-before">ViolinPlot</button>
                     </div>
+                </div>
+                <div class="card-body">
+                    <div id="distributionPlotBefore" style="min-height: 400px;"></div>
                 </div>
             </div>
-            <!-- PCA Plots -->
-            <div class="row mt-4">
-                <div class="col-lg-6 mb-4">
-                    <div class="plot-container card">
-                        <div class="card-header">PCA Plot Before Transformation</div>
-                        <div class="card-body">
-                            <div id="pcaPlotBefore" style="min-height: 400px;"></div>
-                        </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="plot-container card h-100">
+                <div class="card-header">PCA Plot Before Processing</div>
+                <div class="card-body">
+                    <div id="pcaPlotBefore" style="min-height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Third Row: After Transformation Plots -->
+    <div class="row mt-4">
+        <div class="col-lg-8">
+            <div class="plot-container card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    Boxplot Distribution Plot After Processing
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-light active" id="boxplot-btn-after">BoxPlot</button>
+                        <button type="button" class="btn btn-light" id="violinplot-btn-after">ViolinPlot</button>
                     </div>
                 </div>
-                <div class="col-lg-6 mb-4">
-                    <div class="plot-container card">
-                        <div class="card-header">PCA Plot After Transformation</div>
-                        <div class="card-body">
-                            <div id="pcaPlotAfter" style="min-height: 400px;"></div>
-                        </div>
-                    </div>
+                <div class="card-body">
+                    <div id="distributionPlotAfter" style="min-height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="plot-container card h-100">
+                <div class="card-header">PCA Plot After Processing</div>
+                <div class="card-body">
+                    <div id="pcaPlotAfter" style="min-height: 400px;"></div>
                 </div>
             </div>
         </div>
@@ -219,7 +217,7 @@
                     showFlashMessage(response.message, 'success');
                     $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                     updateProcessingSteps(response.steps);
-                    renderPlots(response.plots);
+                    renderAllPlots(response.plots);
                 } else {
                     showFlashMessage(response.error, 'danger');
                 }
@@ -247,7 +245,7 @@
                         showFlashMessage(response.message, 'success');
                         $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                         updateProcessingSteps(response.steps);
-                        renderPlots(response.plots);
+                        renderAllPlots(response.plots);
                     } else {
                         showFlashMessage(response.error, 'danger');
                     }
@@ -261,9 +259,10 @@
 
     function renderPlot(plotId, plotData) {
         const plotDiv = $(`#${plotId}`);
-        if (plotData && plotData.data) {
+        if (plotData) {
             try {
-                Plotly.newPlot(plotId, plotData.data, plotData.layout);
+                const parsedData = JSON.parse(plotData);
+                Plotly.newPlot(plotId, parsedData.data, parsedData.layout);
             } catch (e) {
                 plotDiv.html(`<div class="alert alert-danger">Plot error: ${e}</div>`);
             }
@@ -272,15 +271,31 @@
         }
     }
 
-    function renderPlots(plots) {
-        renderPlot('boxplotDistributionPlot', plots.dist_before);
-        renderPlot('boxplotDistributionPlotNorm', plots.dist_after); // Renamed from Norm to After for consistency
-        renderPlot('pcaPlotBefore', plots.pca_before);
-        renderPlot('pcaPlotAfter', plots.pca_after);
+    function renderDistributionPlots(plots) {
+        if (plots && plots.dist_before) {
+            renderPlot('distributionPlotBefore', plots.dist_before);
+        }
+        if (plots && plots.dist_after) {
+            renderPlot('distributionPlotAfter', plots.dist_after);
+        }
+    }
+
+    function renderPcaPlots(plots) {
+        if (plots && plots.pca_before) {
+            renderPlot('pcaPlotBefore', plots.pca_before);
+        }
+        if (plots && plots.pca_after) {
+            renderPlot('pcaPlotAfter', plots.pca_after);
+        }
+    }
+
+    function renderAllPlots(plots) {
+        renderDistributionPlots(plots);
+        renderPcaPlots(plots);
     }
 
     function updatePlot(plotType, context) {
-        const plotDivId = context === 'before' ? 'boxplotDistributionPlot' : 'boxplotDistributionPlotNorm';
+        const plotDivId = context === 'before' ? 'distributionPlotBefore' : 'distributionPlotAfter';
         const plotDiv = document.getElementById(plotDivId);
         const url = `/get_distribution_plot/${plotType}/${context}`;
 
@@ -306,10 +321,10 @@
     }
 
     $(document).ready(function() {
-        updateNormalizationOptions();
+        updateTransformationOptions();
         {% if plots %}
         try {
-            renderPlots({{ plots|tojson|safe }});
+            renderAllPlots({{ plots|tojson|safe }});
         } catch (e) {
             console.error('Error rendering initial plots:', e);
         }

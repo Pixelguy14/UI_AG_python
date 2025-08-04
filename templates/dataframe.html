@@ -1,12 +1,24 @@
 {% extends "base.html" %}
 
-{% block title %}DataFrame - Omics Data Analysis{% endblock %}
+{% block title %}DataFrame - Metabolomic Data Analysis{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
 {% endblock %}
 
 {% block content %}
+<style>
+    #dataframe-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    #dataframe-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        text-align: left;
+    }
+</style>
 <div class="container-fluid">
     <div class="row">
         <!-- Main DataFrame -->
@@ -78,65 +90,65 @@
 
 {% block extra_js %}
 <script>
-let currentColumn = null;
-let currentPlotType = 'pie';
+    let currentColumn = null;
+    let currentPlotType = 'pie';
 
-    $(document).ready(function() {
-        // Make table headers clickable
-        $('#dataframe-table th').addClass('clickable-column').click(function() {
-        currentColumn = $(this).text().trim();
-        if (currentColumn) {
-            loadColumnInfo(currentColumn, currentPlotType);
-        }
-    });
-
-    $('#pie-chart-btn').click(function() {
-        currentPlotType = 'pie';
-        updateButtonStates();
-        if (currentColumn) {
-            loadColumnInfo(currentColumn, currentPlotType);
-        }
-    });
-
-    $('#density-plot-btn').click(function() {
-        currentPlotType = 'density';
-        updateButtonStates();
-        if (currentColumn) {
-            loadColumnInfo(currentColumn, currentPlotType);
-        }
-    });
-});
-
-function updateButtonStates() {
-    $('#pie-chart-btn').toggleClass('active', currentPlotType === 'pie');
-    $('#density-plot-btn').toggleClass('active', currentPlotType === 'density');
-}
-
-function loadColumnInfo(columnName, plotType) {
-    const url = plotType === 'pie' ? `/column_info/${encodeURIComponent(columnName)}` : `/column_density_plot_main/${encodeURIComponent(columnName)}`;
-
-    $.get(url)
-        .done(function(data) {
-            if (data.error) {
-                $('#plot-container').html(`<div class="alert alert-danger">${data.error}</div>`);
-                return;
+        $(document).ready(function() {
+            // Make table headers clickable
+            $('#dataframe-table th').addClass('clickable-column').click(function() {
+            currentColumn = $(this).text().trim();
+            if (currentColumn) {
+                loadColumnInfo(currentColumn, currentPlotType);
             }
-
-            // Always update the stats and title
-            $('#columnInfoTitle').html(`<i class="fas fa-info-circle me-2"></i>${columnName}`);
-            $('#columnStats').html(data.stats);
-
-            if (plotType === 'pie') {
-                const plotData = JSON.parse(data.null_plot);
-                Plotly.newPlot('plot-container', plotData);
-            } else {
-                const plotData = JSON.parse(data.density_plot);
-                Plotly.newPlot('plot-container', plotData);
-            }
-        })
-        .fail(function() {
-            $('#plot-container').html('<div class="alert alert-danger">Error loading column information</div>');
         });
-}
+
+        $('#pie-chart-btn').click(function() {
+            currentPlotType = 'pie';
+            updateButtonStates();
+            if (currentColumn) {
+                loadColumnInfo(currentColumn, currentPlotType);
+            }
+        });
+
+        $('#density-plot-btn').click(function() {
+            currentPlotType = 'density';
+            updateButtonStates();
+            if (currentColumn) {
+                loadColumnInfo(currentColumn, currentPlotType);
+            }
+        });
+    });
+
+    function updateButtonStates() {
+        $('#pie-chart-btn').toggleClass('active', currentPlotType === 'pie');
+        $('#density-plot-btn').toggleClass('active', currentPlotType === 'density');
+    }
+
+    function loadColumnInfo(columnName, plotType) {
+        const url = plotType === 'pie' ? `/column_info/${encodeURIComponent(columnName)}` : `/column_density_plot_main/${encodeURIComponent(columnName)}`;
+
+        $.get(url)
+            .done(function(data) {
+                if (data.error) {
+                    $('#plot-container').html(`<div class="alert alert-danger">${data.error}</div>`);
+                    return;
+                }
+
+                // Always update the stats and title
+                $('#columnInfoTitle').html(`<i class="fas fa-info-circle me-2"></i>${columnName}`);
+                $('#columnStats').html(data.stats);
+
+                if (plotType === 'pie') {
+                    const plotData = JSON.parse(data.null_plot);
+                    Plotly.newPlot('plot-container', plotData);
+                } else {
+                    const plotData = JSON.parse(data.density_plot);
+                    Plotly.newPlot('plot-container', plotData);
+                }
+            })
+            .fail(function() {
+                $('#plot-container').html('<div class="alert alert-danger">Error loading column information</div>');
+            });
+    }
 </script>
 {% endblock %}

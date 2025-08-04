@@ -1,30 +1,71 @@
 {% extends "base.html" %}
 
-{% block title %}Metadata - Omics Data Analysis{% endblock %}
+{% block title %}Metadata - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="row justify-content-center">
-        <div class="col-lg-10">
+        <div class="col-lg-12">
             <div class="card">
                 <div class="card-header">
                     <h4 class="mb-0">
                         <i class="fas fa-tags me-2"></i>
-                        Assign Column Types
+                        Assign Column Types and Groups
                     </h4>
                 </div>
                 <div class="card-body">
                     <p class="text-muted mb-4">
-                        Assign each column as either metadata, sample data, or mark for removal. 
-                        Columns left as "undefined" will default to sample data.
+                        First define your experimental groups, then assign each column as either metadata, sample data, or mark for removal. 
+                        Columns left as "undefined" will default to sample data. Sample columns can be assigned to multiple experimental groups.
                     </p>
                     
+                    <!-- Group Definition Section -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">
+                                <i class="fas fa-users me-2"></i>
+                                Define Experimental Groups
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row align-items-center mb-3">
+                                <div class="col-md-3">
+                                    <label for="nGroups" class="form-label">Number of Groups:</label>
+                                    <select class="form-select" id="nGroups" onchange="updateGroupInputs()">
+                                        <option value="0">0 (No groups)</option>
+                                        <option value="1">1</option>
+                                        <option value="2" selected>2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-9">
+                                    <small class="text-muted">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Define experimental groups for your sample data (e.g., control vs treatment, healthy vs diseased). 
+                                        Columns can belong to multiple groups.
+                                    </small>
+                                </div>
+                            </div>
+                            
+                            <div id="groupInputsContainer">
+                                <!-- Group name inputs will be dynamically generated here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Column Assignment Table -->
                     <div class="table-responsive">
                         <table class="table table-striped" id="metadataTable">
                             <thead>
                                 <tr>
                                     <th>Column Header</th>
                                     <th>Type Assignment</th>
+                                    <th>Group Assignment</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -33,7 +74,7 @@
                                 <tr data-column="{{ column }}">
                                     <td>{{ column }}</td>
                                     <td>
-                                        <select class="form-select assignment-select" data-column="{{ column }}">
+                                        <select class="form-select assignment-select" data-column="{{ column }}" onchange="updateGroupSelect('{{ column }}')">
                                             <option value="undefined" 
                                                 {% if column not in existing_metadata and column not in existing_sample %}selected{% endif %}>
                                                 Undefined
@@ -49,6 +90,11 @@
                                         </select>
                                     </td>
                                     <td>
+                                        <div class="group-assignment-container" data-column="{{ column }}">
+                                            <!-- Multi-select checkboxes will be generated here -->
+                                        </div>
+                                    </td>
+                                    <td>
                                         <button class="btn btn-sm btn-danger remove-column" data-column="{{ column }}">
                                             <i class="fas fa-times"></i> Remove
                                         </button>
@@ -61,8 +107,14 @@
                     
                     <div class="alert alert-info mt-3">
                         <i class="fas fa-info-circle me-2"></i>
-                        <strong>Note:</strong> Columns marked as "undefined" will be treated as sample data. 
-                        Removed columns will be excluded from further analysis.
+                        <strong>Note:</strong> 
+                        <ul class="mb-0 mt-2">
+                            <li>Columns marked as "undefined" will be treated as sample data</li>
+                            <li>Metadata columns cannot be assigned to experimental groups</li>
+                            <li>Sample columns can belong to multiple groups simultaneously</li>
+                            <li>Unselected groups mean the column doesn't belong to any specific group</li>
+                            <li>Removed columns will be excluded from further analysis</li>
+                        </ul>
                     </div>
                     
                     <div class="d-flex justify-content-between mt-4">
@@ -83,12 +135,20 @@
 {% block extra_js %}
 <script>
     let assignments = {};
+    let groupAssignments = {}; // Will store arrays of group IDs for each column
+    let groupNames = {0: 'Undefined'};
     
     $(document).ready(function() {
         // Initialize assignments
         $('.assignment-select').each(function() {
             const column = $(this).data('column');
             assignments[column] = $(this).val();
+        });
+        
+        // Initialize group assignments (empty arrays for all columns)
+        $('.assignment-select').each(function() {
+            const column = $(this).data('column');
+            groupAssignments[column] = []; // Empty array means no groups selected
         });
         
         // Handle assignment changes
@@ -100,53 +160,148 @@
         // Handle column removal
         $('.remove-column').click(function() {
             const column = $(this).data('column');
-            /*
-            if (confirm(`Are you sure you want to remove column "${column}"?`)) {
-                assignments[column] = 'removed';
-                $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
-                $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
-                    assignments[column] = 'undefined';
-                    $(this).closest('tr').removeClass('table-danger').find('select').prop('disabled', false).val('undefined');
-                    $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
-                    // Re-bind remove handler
-                    bindRemoveHandler($(this));
-                });
-            }
-            */
             assignments[column] = 'removed';
-            $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
+            $(this).closest('tr').addClass('table-danger').find('select, input').prop('disabled', true);
             $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
                 assignments[column] = 'undefined';
-                $(this).closest('tr').removeClass('table-danger').find('select').prop('disabled', false).val('undefined');
+                $(this).closest('tr').removeClass('table-danger').find('select, input').prop('disabled', false);
+                $(this).closest('tr').find('.assignment-select').val('undefined');
                 $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
                 // Re-bind remove handler
                 bindRemoveHandler($(this));
+                // Update group select availability
+                updateGroupSelect(column);
             });
         });
+        
+        // Initialize group inputs
+        updateGroupInputs();
     });
+    
+    function updateGroupInputs() {
+        const nGroups = parseInt($('#nGroups').val());
+        const container = $('#groupInputsContainer');
+        container.empty();
+        
+        // Reset group names
+        groupNames = {0: 'Undefined'};
+        
+        if (nGroups > 0) {
+            const row = $('<div class="row g-3"></div>');
+            
+            for (let i = 1; i <= nGroups; i++) {
+                const col = $(`
+                    <div class="col-md-4">
+                        <label for="group${i}Name" class="form-label">Group ${i} Name:</label>
+                        <input type="text" class="form-control group-name-input" id="group${i}Name" 
+                               data-group="${i}" placeholder="e.g., ${i === 1 ? 'Control' : i === 2 ? 'Treatment' : 'Group ' + i}"
+                               onchange="updateGroupName(${i})">
+                    </div>
+                `);
+                row.append(col);
+                
+                // Initialize group name
+                groupNames[i] = `Group ${i}`;
+            }
+            
+            container.append(row);
+        }
+        
+        // Update all group assignment containers
+        updateAllGroupAssignments();
+    }
+    
+    function updateGroupName(groupIndex) {
+        const input = $(`#group${groupIndex}Name`);
+        const name = input.val().trim();
+        groupNames[groupIndex] = name || `Group ${groupIndex}`;
+        
+        // Update all group assignment containers with new name
+        updateAllGroupAssignments();
+    }
+    
+    function updateAllGroupAssignments() {
+        $('.group-assignment-container').each(function() {
+            const column = $(this).data('column');
+            updateGroupAssignmentContainer(column);
+        });
+    }
+    
+    function updateGroupAssignmentContainer(column) {
+        const container = $(`.group-assignment-container[data-column="${column}"]`);
+        const isMetadata = $(`.assignment-select[data-column="${column}"]`).val() === 'metadata';
+        const isRemoved = assignments[column] === 'removed';
+        
+        // Store current selections
+        const currentSelections = groupAssignments[column] || [];
+        
+        // Clear container
+        container.empty();
+        
+        if (isMetadata || isRemoved) {
+            container.append('<small class="text-muted">N/A for metadata</small>');
+            groupAssignments[column] = [];
+            return;
+        }
+        
+        // Create checkboxes for each group
+        const nGroups = parseInt($('#nGroups').val());
+        
+        if (nGroups === 0) {
+            container.append('<small class="text-muted">No groups defined</small>');
+            groupAssignments[column] = [];
+            return;
+        }
+        
+        const checkboxContainer = $('<div class="d-flex flex-wrap gap-2"></div>');
+        
+        for (let i = 1; i <= nGroups; i++) {
+            const isChecked = currentSelections.includes(i);
+            const checkbox = $(`
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input group-checkbox" type="checkbox" 
+                           id="group_${column}_${i}" data-column="${column}" data-group="${i}"
+                           ${isChecked ? 'checked' : ''}>
+                    <label class="form-check-label" for="group_${column}_${i}">
+                        ${i} - ${groupNames[i]}
+                    </label>
+                </div>
+            `);
+            checkboxContainer.append(checkbox);
+        }
+        
+        container.append(checkboxContainer);
+        
+        // Bind change events to checkboxes
+        container.find('.group-checkbox').change(function() {
+            updateGroupAssignment(column);
+        });
+    }
+    
+    function updateGroupAssignment(column) {
+        const selectedGroups = [];
+        $(`.group-checkbox[data-column="${column}"]:checked`).each(function() {
+            selectedGroups.push(parseInt($(this).data('group')));
+        });
+        groupAssignments[column] = selectedGroups;
+    }
+    
+    function updateGroupSelect(column) {
+        updateGroupAssignmentContainer(column);
+    }
     
     function bindRemoveHandler(button) {
         button.off('click').click(function() {
             const column = $(this).data('column');
-            /*
-            if (confirm(`Are you sure you want to remove column "${column}"?`)) {
-                assignments[column] = 'removed';
-                $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
-                $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
-                    assignments[column] = 'undefined';
-                    $(this).closest('tr').removeClass('table-danger').find('select').prop('disabled', false).val('undefined');
-                    $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
-                    bindRemoveHandler($(this));
-                });
-            }
-            */
             assignments[column] = 'removed';
-            $(this).closest('tr').addClass('table-danger').find('select').prop('disabled', true);
+            $(this).closest('tr').addClass('table-danger').find('select, input').prop('disabled', true);
             $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
                 assignments[column] = 'undefined';
-                $(this).closest('tr').removeClass('table-danger').find('select').prop('disabled', false).val('undefined');
+                $(this).closest('tr').removeClass('table-danger').find('select, input').prop('disabled', false);
+                $(this).closest('tr').find('.assignment-select').val('undefined');
                 $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
                 bindRemoveHandler($(this));
+                updateGroupSelect(column);
             });
         });
     }
@@ -157,28 +312,51 @@
             $('tr').removeClass('table-danger');
             $('.remove-column').html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
             
-            // Reset assignments object
+            // Reset assignments objects
             $('.assignment-select').each(function() {
                 const column = $(this).data('column');
                 assignments[column] = 'undefined';
+                groupAssignments[column] = [];
             });
             
             // Re-bind remove handlers
             $('.remove-column').each(function() {
                 bindRemoveHandler($(this));
             });
+            
+            // Reset group inputs
+            $('#nGroups').val(2);
+            updateGroupInputs();
         }
     }
     
     function saveAssignments() {
+        // Validate that all groups have names
+        const nGroups = parseInt($('#nGroups').val());
+        for (let i = 1; i <= nGroups; i++) {
+            const name = $(`#group${i}Name`).val().trim();
+            if (!name) {
+                alert(`Please provide a name for Group ${i}`);
+                $(`#group${i}Name`).focus();
+                return;
+            }
+        }
+        
+        const data = {
+            assignments: assignments,
+            groupAssignments: groupAssignments,
+            groupNames: groupNames,
+            nGroups: nGroups
+        };
+        
         $.ajax({
             url: '/metadata',
             method: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify(assignments),
+            data: JSON.stringify(data),
             success: function(response) {
                 if (response.success) {
-                    alert('Assignments saved successfully!');
+                    alert('Assignments and groups saved successfully!');
                     window.location.href = '/summary';
                 } else {
                     alert('Error saving assignments: ' + response.message);

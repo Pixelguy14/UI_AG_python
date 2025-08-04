@@ -1,19 +1,8 @@
-# import json
-import logging
-import os
-
-import numpy as np
+from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
 import pandas as pd
-from flask import (
-    Flask,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    session,
-    url_for,
-)
+# import io
+import os
+import numpy as np
 from flask_session import Session  # Import Flask-Session
 from werkzeug.utils import secure_filename
 
@@ -40,8 +29,6 @@ from src.functions.normalization_methods import (
     median_normalization,
     quantile_normalization,
     pqn_normalization,
-    # is_normalization,
-    # svr_normalization,
 )
 from src.functions.log_transfomation_methods import (
     log2_transform,
@@ -67,14 +54,33 @@ from src.functions.plot_definitions import (
     create_distribution_plot,
     create_heatmap,
     create_heatmap_BW,
+    create_hca_plot,
     create_pca_plot,
     create_pie_chart,
     create_violinplot,
+    create_plsda_plot,
+    create_oplsda_plot,
+    create_volcano_plot,
+    create_clustergram
 )
 from src.views.distributionTabView import distribution_bp
+from src.functions.statistical_tests import (
+    run_t_test, 
+    run_wilcoxon_rank_sum, 
+    run_anova, 
+    run_kruskal_wallis,
+    run_linear_model, 
+    run_permanova, 
+    apply_multiple_test_correction,
+    format_anova_results_html
+)
 
 # Configure logging
+import logging
 logging.basicConfig(level=logging.DEBUG)
+
+# Silence the verbose DEBUG messages from matplotlib's font manager
+logging.getLogger('matplotlib').setLevel(logging.INFO)
 
 app = Flask(__name__)
 app.register_blueprint(distribution_bp)
@@ -113,6 +119,18 @@ def before_request():
         session['orientation'] = 'cols'
     if 'imputation_performed' not in session:
         session['imputation_performed'] = False
+    if 'group_assignments' not in session:
+        session['group_assignments'] = {}
+    if 'group_names' not in session:
+        session['group_names'] = {}
+    if 'n_groups' not in session:
+        session['n_groups'] = 0
+    if 'group_vector' not in session:
+        session['group_vector'] = {}
+    if 'processing_steps' not in session:
+        session['processing_steps'] = []
+    if 'differential_analysis_results' not in session:
+        session['differential_analysis_results'] = None
 
 
 @app.route('/')
@@ -134,7 +152,23 @@ def upload_file():
             return redirect(request.url)
         
         if file:
-            reset()
+            # Reset session state for a new file upload
+            session['df_main'] = None
+            session['df_metadata'] = None
+            session['df_sample'] = None
+            session['df_history'] = []
+            session['imputed_mask'] = None
+            session['df_original'] = None
+            session['current_column'] = ''
+            session['orientation'] = 'cols'
+            session['imputation_performed'] = False
+            session['group_assignments'] = {}
+            session['group_names'] = {}
+            session['n_groups'] = 0
+            session['group_vector'] = {}
+            if 'processing_steps' in session:
+                session['processing_steps'] = []
+            
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
@@ -151,11 +185,17 @@ def upload_file():
                 if orientation == 'rows':
                     df = df.T
                 
+                # Ensure column names are strings to avoid type mismatches later
+                df.columns = df.columns.map(str)
+
                 # Clean column names (remove paths)
-                rename_map = {col: os.path.basename(col) for col in df.columns if '/' in col or '\\' in col}
+                rename_map = {
+                    col: os.path.basename(col) 
+                    for col in df.columns 
+                    if isinstance(col, str) and ('/' in col or '\\' in col)
+                }
                 if rename_map:
                     df.rename(columns=rename_map, inplace=True)
-                
                 # Store full DataFrame in session
                 session['df_main'] = df
                 session['df_original'] = df
@@ -164,12 +204,24 @@ def upload_file():
                 # Create a preview for the upload page
                 df_preview_html = df.head(10).to_html(classes='table table-striped table-hover table-sm', table_id='dataframe-preview-table', border=0)
                 
+                # Generate data types distribution plot for upload page
+                summary_stats = preprocessing_summary_perVariable(df)
+                type_counts = summary_stats['type'].value_counts()
+                data_types_plot = create_bar_plot(
+                    x=type_counts.index.tolist(),
+                    y=type_counts.values.tolist(),
+                    title='Data Types Distribution',
+                    xaxis_title='Data Type',
+                    yaxis_title='Count'
+                )
+
                 flash('File uploaded successfully! A preview is shown below.', 'success')
                 
                 # Re-render the upload page, now with the preview
                 return render_template('upload.html', 
                                      df_preview_html=df_preview_html,
-                                     shape=df.shape)
+                                     shape=df.shape,
+                                     data_types_plot=data_types_plot)
                 
             except Exception as e:
                 flash(f'An error occurred while processing the file: {str(e)}', 'danger')
@@ -185,9 +237,10 @@ def summary():
         return redirect(url_for('upload_file'))
     
     df = session['df_main']
-
+    """
     # Generate summary statistics
     general_stats = preprocessing_general_dataset_statistics(df)
+    
     summary_stats = preprocessing_summary_perVariable(df)
     
     # Create plots
@@ -202,10 +255,12 @@ def summary():
         xaxis_title='Data Type',
         yaxis_title='Count'
     )
-    
+    """
+    plots = {}
     # Correlation matrix (if we have sample data)
     if session.get('df_history') and not session['df_history'][-1].empty:
         df_sample = session['df_history'][-1]
+        general_stats = preprocessing_general_dataset_statistics(df_sample)
         numeric_df = df_sample.select_dtypes(include=[np.number])
         
         if not numeric_df.empty and numeric_df.shape[1] > 1:
@@ -233,7 +288,9 @@ def summary():
                 y=mean_values.values.tolist(),
                 title=f'Mean Intensity ({len(mean_values)} samples)',
                 xaxis_title='Samples',
-                yaxis_title='Mean log2 intensity'
+                yaxis_title='Mean log2 intensity',
+                group_vector=session.get('group_vector'),
+                group_names=session.get('group_names')
             )
 
         # Boxplot with all points
@@ -241,7 +298,9 @@ def summary():
         if not numeric_df_for_boxplot.empty:
             plots['boxplot_distribution'] = create_boxplot(
                 numeric_df_for_boxplot,
-                title='Distribution of Sample Data'
+                title='Distribution of Sample Data',
+                group_vector=session.get('group_vector'),
+                group_names=session.get('group_names')
             )
     else:
         # Missing values heatmap
@@ -249,6 +308,7 @@ def summary():
             df.isnull().astype(int),
             title='Missing Values Distribution'
         )
+        general_stats = preprocessing_general_dataset_statistics(df)
 
     return render_template('summary.html', 
                          general_stats=general_stats.to_html(classes='table table-striped'),
@@ -392,9 +452,13 @@ def metadata():
     df = session['df_main']
     
     if request.method == 'POST':
-        assignments = request.json
+        data = request.json
+        assignments = data.get('assignments', {})
+        group_assignments = data.get('groupAssignments', {})
+        group_names = data.get('groupNames', {})
+        n_groups = data.get('nGroups', 0)
         
-        # Process assignments
+        # Process type assignments
         metadata_cols = [col for col, assign in assignments.items() if assign == 'metadata']
         sample_cols = [col for col, assign in assignments.items() if assign in ['sample', 'undefined']]
         removed_cols = [col for col, assign in assignments.items() if assign == 'removed']
@@ -409,8 +473,37 @@ def metadata():
         session['df_sample'] = df_sample if not df_sample.empty else None
         session['df_history'] = [df_sample] if not df_sample.empty else []
         session['df_main'] = df_original
+
+        # Reset processing state since sample data might have changed
+        session['processing_steps'] = []
+        session['imputation_performed'] = False
+        session['imputed_mask'] = None
         
-        return jsonify({'success': True, 'message': 'Metadata assignments saved successfully'})
+        # Store group information
+        session['group_assignments'] = group_assignments
+        session['group_names'] = group_names
+        session['n_groups'] = n_groups
+        
+        # Create group vector for sample columns only
+        group_vector = {}
+        for col in sample_cols:
+            if col in group_assignments and group_assignments[col]:
+                # Column belongs to multiple groups
+                group_info = {
+                    'groups': group_assignments[col],
+                    'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[col]]
+                }
+            else:
+                # Column doesn't belong to any group
+                group_info = {
+                    'groups': [],
+                    'group_names': []
+                }
+            group_vector[col] = group_info
+        
+        session['group_vector'] = group_vector
+        
+        return jsonify({'success': True, 'message': 'Metadata assignments and groups saved successfully'})
     
     # Get existing assignments
     existing_metadata = []
@@ -425,6 +518,103 @@ def metadata():
                          columns=df.columns.tolist(),
                          existing_metadata=existing_metadata,
                          existing_sample=existing_sample)
+
+@app.route('/groups')
+def view_groups():
+    """View current group assignments"""
+    if not session.get('group_vector'):
+        flash('No group assignments found. Please define groups in metadata first.')
+        return redirect(url_for('metadata'))
+    
+    group_vector = session['group_vector']
+    group_names = session.get('group_names', {})
+    n_groups = session.get('n_groups', 0)
+    
+    # Initialize steps if they are empty
+    if 'processing_steps' not in session or not session['processing_steps']:
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
+
+    # Create summary statistics
+    group_summary = {}
+    for group_id, group_name in group_names.items():
+        if group_id != '0':  # Skip undefined group
+            count = 0
+            for col, info in group_vector.items():
+                if int(group_id) in info.get('groups', []):
+                    count += 1
+            group_summary[group_name] = count
+    
+    # Create a DataFrame for display
+    group_data = []
+    for col, info in group_vector.items():
+        if info['groups']:
+            group_names_str = ', '.join(info['group_names'])
+            group_ids_str = ', '.join(map(str, info['groups']))
+        else:
+            group_names_str = 'No groups'
+            group_ids_str = 'None'
+        
+        group_data.append({
+            'Column': col,
+            'Group IDs': group_ids_str,
+            'Group Names': group_names_str
+        })
+    
+    # Create summary statistics
+    group_summary = {}
+    for group_id, group_name in group_names.items():
+        if group_id != '0':  # Skip undefined group
+            count = 0
+            for col, info in group_vector.items():
+                if int(group_id) in info.get('groups', []):
+                    count += 1
+            group_summary[group_name] = count
+
+    return render_template('groups.html',
+                         group_vector=group_vector,
+                         group_assignments=session.get('group_assignments', {}),
+                         group_names=group_names,
+                         n_groups=n_groups,
+                         group_summary=group_summary,
+                         processing_steps=session.get('processing_steps', []))
+
+@app.route('/update_groups', methods=['POST'])
+def update_groups():
+    """Update group assignments without resetting data processing."""
+    df_sample = session.get('df_sample')
+    if df_sample is None or df_sample.empty:
+        return jsonify({'success': False, 'message': 'No sample data found.'})
+
+    data = request.json
+    group_assignments = data.get('groupAssignments', {})
+    group_names = data.get('groupNames', {})
+    n_groups = data.get('nGroups', 0)
+
+    # Update group information in session
+    session['group_assignments'] = group_assignments
+    session['group_names'] = group_names
+    session['n_groups'] = n_groups
+
+    # Recreate group vector
+    sample_cols = session['df_sample'].columns.tolist()
+    group_vector = {}
+    for col in sample_cols:
+        if col in group_assignments and group_assignments[col]:
+            group_info = {
+                'groups': group_assignments[col],
+                'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[col]]
+            }
+        else:
+            group_info = {
+                'groups': [],
+                'group_names': []
+            }
+        group_vector[col] = group_info
+    
+    session['group_vector'] = group_vector
+    session.modified = True
+
+    return jsonify({'success': True, 'message': 'Group assignments updated successfully.'})
 
 @app.route('/imputation')
 def imputation():
@@ -571,18 +761,43 @@ def apply_imputation():
         logging.error(f"Imputation failed for method {method}: {e}", exc_info=True)
         return jsonify({'error': f'Imputation failed: {str(e)}'})
 
+@app.route('/replace_zeros', methods=['POST'])
+def replace_zeros():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No data available to process.'})
+
+    df_current = session['df_history'][-1]
+    df_cleaned = df_current.replace(0, np.nan)
+
+    session['df_history'].append(df_cleaned)
+    session['processing_steps'].append({
+        'icon': 'fa-broom',
+        'color': 'text-warning',
+        'message': 'Replaced all zero values with NaN.'
+    })
+    session.modified = True
+
+    updated_heatmap = create_heatmap_BW(
+        df_cleaned,
+        title='Missing Values Distribution',
+        imputed=session.get('imputation_performed', False),
+        null_mask=session.get('imputed_mask')
+    )
+
+    return jsonify({
+        'success': True,
+        'message': 'All zero values have been replaced with NaN.',
+        'new_shape': df_cleaned.shape,
+        'steps': session['processing_steps'],
+        'missing_heatmap': updated_heatmap
+    })
+
 @app.route('/normalization')
 def normalization():
     if not session.get('df_history'):
         flash('Please define sample data first')
         return redirect(url_for('metadata'))
     
-    # df_sample = session['df_history'][-1]
-    
-    # Initialize steps if they are empty
-    if 'processing_steps' not in session or not session['processing_steps']:
-        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
-
     df_current = session['df_history'][-1]
     df_before = session['df_history'][0] # Assuming the first entry is the original sample data
 
@@ -590,7 +805,7 @@ def normalization():
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = get_normalization_plots(df_before, df_current)
+    plots = get_normalization_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
     return render_template('normalization.html',
                            original_shape=session['df_sample'].shape,
@@ -598,7 +813,6 @@ def normalization():
                            processing_steps=session.get('processing_steps', []),
                            plots=plots
                           )
-
 
 @app.route('/apply_normalization', methods=['POST'])
 def apply_normalization():
@@ -634,7 +848,7 @@ def apply_normalization():
         df_before_normalization = session['df_history'][0]
         
         # Generate plots
-        plots = get_normalization_plots(df_before_normalization, normalized_df)
+        plots = get_normalization_plots(df_before_normalization, normalized_df, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
         return jsonify({
             'success': True,
@@ -658,7 +872,7 @@ def transformation():
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = get_transformation_plots(df_before, df_current)
+    plots = get_transformation_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
     return render_template('transformation.html',
                            original_shape=session['df_sample'].shape,
@@ -705,7 +919,7 @@ def apply_transformation():
 
         df_before_transformation = session['df_history'][0]
         plot_type = request.json.get('plot_type', 'boxplot')
-        plots = get_transformation_plots(df_before_transformation, transformed_df, plot_type)
+        plots = get_transformation_plots(df_before_transformation, transformed_df, plot_type, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
         return jsonify({
             'success': True,
@@ -730,7 +944,7 @@ def scaling():
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = get_scaling_plots(df_before, df_current)
+    plots = get_scaling_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
     return render_template('scaling.html',
                            original_shape=session['df_sample'].shape,
@@ -775,7 +989,7 @@ def apply_scaling():
 
         df_before_scaling = session['df_history'][0]
         plot_type = request.json.get('plot_type', 'boxplot')
-        plots = get_scaling_plots(df_before_scaling, scaled_df, plot_type)
+        plots = get_scaling_plots(df_before_scaling, scaled_df, plot_type, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
         return jsonify({
             'success': True,
@@ -804,9 +1018,9 @@ def get_distribution_plot(plot_type, context):
 
     try:
         if plot_type == 'boxplot':
-            plot = create_boxplot(numeric_df, title='Current Data Distribution')
+            plot = create_boxplot(numeric_df, title='Current Data Distribution', group_vector=session.get('group_vector'), group_names=session.get('group_names'))
         elif plot_type == 'violinplot':
-            plot = create_violinplot(numeric_df, title='Current Data Distribution')
+            plot = create_violinplot(numeric_df, title='Current Data Distribution', group_vector=session.get('group_vector'), group_names=session.get('group_names'))
         else:
             return jsonify({'error': 'Invalid plot type'})
         
@@ -831,40 +1045,45 @@ def reset():
     session['current_column'] = ''
     session['processing_steps'] = [] # Clear processing steps
     session['imputation_performed'] = False # Reset imputation flag
+    # Reset group-related session variables
+    session['group_assignments'] = {}
+    session['group_names'] = {}
+    session['n_groups'] = 0
+    session['group_vector'] = {}
     
     flash('Data reset to original state')
     return redirect(url_for('summary'))
 
-def get_normalization_plots(df_before, df_after, plot_type='boxplot'):
+def get_normalization_plots(df_before, df_after, plot_type='boxplot', group_vector=None, group_names=None):
     """Helper function to generate all plots for the normalization page."""
     plots = {}
     # Before normalization
-    plots['dist_before'] = create_boxplot(df_before, 'Before Normalization') if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Normalization')
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Normalization')
+    plots['dist_before'] = create_boxplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
+    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
     
     # After normalization
-    plots['dist_after'] = create_boxplot(df_after, 'After Normalization') if plot_type == 'boxplot' else create_violinplot(df_after, 'After Normalization')
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Normalization')
+    plots['dist_after'] = create_boxplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
+    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
     return plots
 
-def get_transformation_plots(df_before, df_after, plot_type='boxplot'):
+def get_transformation_plots(df_before, df_after, plot_type='boxplot', group_vector=None, group_names=None):
     """Helper function to generate all plots for the transformation page."""
     plots = {}
-    plots['dist_before'] = create_boxplot(df_before, 'Before Transformation') if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Transformation')
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Transformation')
+    plots['dist_before'] = create_boxplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
+    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
     
-    plots['dist_after'] = create_boxplot(df_after, 'After Transformation') if plot_type == 'boxplot' else create_violinplot(df_after, 'After Transformation')
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Transformation')
+    plots['dist_after'] = create_boxplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
+    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
     return plots
 
-def get_scaling_plots(df_before, df_after, plot_type='boxplot'):
+def get_scaling_plots(df_before, df_after, plot_type='boxplot', group_vector=None, group_names=None):
     """Helper function to generate all plots for the scaling page."""
     plots = {}
-    plots['dist_before'] = create_boxplot(df_before, 'Before Scaling') if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Scaling')
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Scaling')
+    plots['dist_before'] = create_boxplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
+    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
     
-    plots['dist_after'] = create_boxplot(df_after, 'After Scaling') if plot_type == 'boxplot' else create_violinplot(df_after, 'After Scaling')
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Scaling')
+    plots['dist_after'] = create_boxplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
+    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
     return plots
 
 @app.route('/reset_sample_step', methods=['POST'])
@@ -899,13 +1118,13 @@ def reset_sample_step():
         )
     elif context == 'normalization':
         df_before = session['df_history'][0]
-        response_data['plots'] = get_normalization_plots(df_before, df_current)
+        response_data['plots'] = get_normalization_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
     elif context == 'transformation':
         df_before = session['df_history'][0]
-        response_data['plots'] = get_transformation_plots(df_before, df_current)
+        response_data['plots'] = get_transformation_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
     elif context == 'scaling':
         df_before = session['df_history'][0]
-        response_data['plots'] = get_scaling_plots(df_before, df_current)
+        response_data['plots'] = get_scaling_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
 
     return jsonify(response_data)
 
@@ -923,6 +1142,82 @@ def analysis():
                          shape=df.shape,
                          columns=df.columns.tolist())
 
+@app.route('/multivariate_analysis')
+def multivariate_analysis():
+    if not session.get('df_history'):
+        flash('Please process sample data first')
+        return redirect(url_for('imputation'))
+
+    df_history = session.get('df_history', [])
+    processing_steps = session.get('processing_steps', [])
+
+    #history_options = [(-1, 'Original Data')]
+    history_options = []
+    for i, step in enumerate(processing_steps):
+        history_options.append((i, step['message']))
+
+    return render_template('multivariate_analysis.html',
+                           history_options=history_options,
+                           selected_history_index=len(df_history) - 1)
+
+@app.route('/get_pca_plot/<int:history_index>')
+def get_pca_plot(history_index):
+    if not session.get('df_history') or history_index >= len(session['df_history']):
+        return jsonify({'error': 'Invalid history index'})
+
+    df = session['df_history'][history_index]
+    
+    plot = create_pca_plot(df, 'PCA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
+    
+    return jsonify({'plot': plot})
+
+@app.route('/get_hca_plot/', methods=['POST'])
+def get_hca_plot():
+    if not session.get('df_history'):
+        return jsonify({'error': 'Invalid history index'})
+
+    data = request.json
+    distance_metric = data.get('distance_metric', 'euclidean')
+    linkage_method = data.get('linkage_method', 'average')
+
+    df = session['df_history'][-1]
+
+    plot = create_hca_plot(df, 'HCA Plot', 
+                           group_vector=session.get('group_vector'), 
+                           group_names=session.get('group_names'),
+                           distance_metric=distance_metric,
+                           linkage_method=linkage_method)
+    
+    return jsonify({'plot': plot})
+
+@app.route('/get_plsda_plot/<int:history_index>')
+def get_plsda_plot(history_index):
+    if not session.get('df_history') or history_index >= len(session['df_history']):
+        return jsonify({'error': 'Invalid history index'})
+
+    df = session['df_history'][history_index]
+    
+    plot = create_plsda_plot(df, 'PLS-DA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
+    
+    return jsonify({'plot': plot})
+
+@app.route('/get_oplsda_plot/<int:history_index>')
+def get_oplsda_plot(history_index):
+    if not session.get('df_history') or history_index >= len(session['df_history']):
+        return jsonify({'error': 'Invalid history index'})
+
+    df = session['df_history'][history_index]
+    
+    plot = create_oplsda_plot(df, 'OPLS-DA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
+    
+    return jsonify({'plot': plot})
+
+@app.route('/get_metadata_columns')
+def get_metadata_columns():
+    if session.get('df_metadata') is not None:
+        return jsonify({'columns': session['df_metadata'].columns.tolist()})
+    return jsonify({'columns': []})
+
 @app.route('/comparison')
 def comparison():
     if not session.get('df_history'):
@@ -930,16 +1225,41 @@ def comparison():
         return redirect(url_for('metadata'))
     
     df_original = session['df_sample']
-    df_processed = session['df_history'][-1]
-    
-    original_html = df_original.to_html(classes='table table-striped table-sm')
-    processed_html = df_processed.to_html(classes='table table-striped table-sm')
-    
+    df_history = session.get('df_history', [])
+    processing_steps = session.get('processing_steps', [])
+
+    # Create a list of tuples for the history dropdown
+    history_options = []
+    if len(df_history) > 1:
+        for i, step in enumerate(processing_steps):
+            # The first df in history is the original sample, so we skip it
+            history_options.append((i + 1, step['message']))
+
+    # Default to the last processed dataframe
+    df_processed = df_history[-1]
+    processed_html = df_processed.to_html(classes='table table-striped table-sm', table_id='processed-table')
+    original_html = df_original.to_html(classes='table table-striped table-sm', table_id='original-table')
+
     return render_template('comparison.html',
                          original_html=original_html,
                          processed_html=processed_html,
                          original_shape=df_original.shape,
-                         processed_shape=df_processed.shape)
+                         processed_shape=df_processed.shape,
+                         history_options=history_options,
+                         selected_history_index=len(df_history) - 1)
+
+@app.route('/get_comparison_data/<int:history_index>')
+def get_comparison_data(history_index):
+    if not session.get('df_history') or history_index >= len(session['df_history']):
+        return jsonify({'error': 'Invalid history index'})
+
+    df_processed = session['df_history'][history_index]
+    processed_html = df_processed.to_html(classes='table table-striped table-sm', table_id='processed-table')
+
+    return jsonify({
+        'processed_html': processed_html,
+        'processed_shape': df_processed.shape
+    })
 
 @app.route('/distribution/<column_name>')
 def distribution(column_name):
@@ -960,6 +1280,144 @@ def distribution(column_name):
     plot = create_distribution_plot(data_series, column_name)
     
     return jsonify({'plot': plot})
+
+@app.route('/differential_analysis')
+def differential_analysis():
+    if not session.get('df_history'):
+        flash('Please process sample data first')
+        return redirect(url_for('imputation'))
+    
+    group_names = session.get('group_names', {})
+    group_vector = session.get('group_vector', {})
+    
+    # Check for existing results in session
+    results_html = None
+    if not session['differential_analysis_results'].empty:
+        results_df = session['differential_analysis_results']
+        results_html = results_df.to_html(classes='table table-striped table-sm', table_id='resultsTable')
+        print(results_df.head(10))
+    
+    return render_template('differential_analysis.html',
+                           group_names=group_names,
+                           group_vector=group_vector,
+                           results_html=results_html)
+
+
+@app.route('/run_differential_analysis', methods=['POST'])
+def run_differential_analysis():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No sample data available'})
+
+    data = request.json
+    test_type = data.get('test_type')
+    groups = data.get('groups')
+    correction_method = data.get('correction_method')
+    paired_map = data.get('paired_map')
+    formula = data.get('formula')
+
+    df = session['df_history'][-1]
+    group_vector = session['group_vector']
+    results_df = pd.DataFrame()
+
+    try:
+        if test_type in ['ttest', 'paired_ttest']:
+            if len(groups) != 2:
+                return jsonify({'error': 'T-test requires exactly two groups.'})
+            group1_id, group2_id = int(groups[0]), int(groups[1])
+            group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
+            group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+            results_df = run_t_test(df, group1_cols, group2_cols, paired=(test_type == 'paired_ttest'), paired_map=paired_map)
+
+        elif test_type == 'wilcoxon':
+            if len(groups) != 2:
+                return jsonify({'error': 'Wilcoxon test requires exactly two groups.'})
+            group1_id, group2_id = int(groups[0]), int(groups[1])
+            group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
+            group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+            results_df = run_wilcoxon_rank_sum(df, group1_cols, group2_cols)
+
+        elif test_type == 'anova':
+            if len(groups) < 2:
+                return jsonify({'error': 'ANOVA requires at least two groups.'})
+            group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+            
+            # Run ANOVA to get stats
+            anova_results = run_anova(df, group_map)
+            
+            results_df = format_anova_results_html(df, group_map, anova_results)
+
+        elif test_type == 'kruskal_wallis':
+            if len(groups) < 2:
+                return jsonify({'error': 'Kruskal-Wallis requires at least two groups.'})
+            group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+            results_df = run_kruskal_wallis(df, group_map)
+
+        elif test_type == 'linear_model':
+            if not formula:
+                return jsonify({'error': 'Linear model requires a formula.'})
+            # Note: The run_linear_model function expects the metadata dataframe
+            metadata_df = session.get('df_metadata')
+            if metadata_df is None:
+                 return jsonify({'error': 'Linear models require metadata with covariates.'})
+            results_df = run_linear_model(df, formula, metadata_df)
+
+        else:
+            return jsonify({'error': 'Invalid test type'})
+
+        # Apply multiple test correction
+        if 'p_value' in results_df.columns and correction_method != 'none':
+            p_adj, rejected = apply_multiple_test_correction(results_df['p_value'], method=correction_method)
+            results_df['p_adj'] = p_adj
+            results_df['rejected'] = rejected
+
+        session['differential_analysis_results'] = results_df
+        print(results_df.head(10))
+        return jsonify({'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False)})
+
+    except Exception as e:
+        logging.error(f"Differential analysis failed: {e}", exc_info=True)
+        return jsonify({'error': f'An error occurred during analysis: {str(e)}'})
+
+@app.route('/run_permanova', methods=['POST'])
+def run_permanova_route():
+    if not session.get('df_history'):
+        return jsonify({'error': 'No sample data available'})
+
+    data = request.json
+    distance_metric = data.get('distance_metric', 'euclidean')
+    permutations = int(data.get('permutations', 999))
+
+    df = session['df_history'][-1]
+    group_vector = session['group_vector']
+
+    try:
+        result = run_permanova(df, group_vector, distance_metric, permutations)
+        result_summary = {
+            'test_statistic': result['test statistic'],
+            'p_value': result['p-value']
+        }
+        session['permanova_results'] = result_summary
+        return jsonify({'success': True, 'result': result_summary})
+    except Exception as e:
+        logging.error(f"PERMANOVA analysis failed: {e}", exc_info=True)
+        return jsonify({'error': f'PERMANOVA failed: {str(e)}'})
+
+@app.route('/result_visualization')
+def result_visualization():
+    if session['differential_analysis_results'].empty:
+        flash('Please run a differential analysis first.', 'warning')
+        return redirect(url_for('differential_analysis'))
+
+    results_df = session['differential_analysis_results']
+    data_df = session['df_history'][-1]
+
+    volcano_plot = create_volcano_plot(results_df)
+    clustergram_plot =create_clustergram(data_df, results_df, group_vector=session.get('group_vector'), group_names=session.get('group_names'), distance_metric='euclidean', linkage_method='average')
+
+    return render_template('result_visualization.html', 
+                           volcano_plot=volcano_plot, 
+                           clustergram_plot=clustergram_plot)
+
 
 if __name__ == '__main__':
     app.run(debug=True)

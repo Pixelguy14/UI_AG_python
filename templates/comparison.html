@@ -1,19 +1,45 @@
 {% extends "base.html" %}
 
-{% block title %}Comparison - Omics Data Analysis{% endblock %}
+{% block title %}Comparison - Metabolomic Data Analysis{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
 <style>
     .table-container {
         width: 100%;
         overflow-x: auto;
+    }
+    .highlight {
+        background-color: #ffc107 !important; /* Bootstrap warning color */
+        font-weight: bold;
+    }
+    .search-highlight {
+        background-color: #17a2b8 !important; /* Bootstrap info color */
+        color: white !important;
+        transition: background-color 0.5s ease;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Navigation Controls -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body d-flex justify-content-center align-items-center">
+                    <div class="input-group me-3">
+                        <input type="text" id="rowSearchInput" class="form-control" placeholder="Go to Row (e.g., Metabolite Name)">
+                        <button class="btn btn-outline-secondary" type="button" onclick="goToRow()"><i class="fas fa-arrow-right"></i></button>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="colSearchInput" class="form-control" placeholder="Go to Column (e.g., Sample Name)">
+                        <button class="btn btn-outline-secondary" type="button" onclick="goToColumn()"><i class="fas fa-arrow-down"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-lg-6">
             <div class="card">
@@ -21,9 +47,11 @@
                     <h5 class="mb-0">Original Data</h5>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
+                    <p class="text-muted">Shape: <span id="originalShape">{{ original_shape[0] }} rows, {{ original_shape[1] }} columns</span></p>
                     <div class="table-container" style="max-height: 70vh; overflow-y: auto;">
-                        {{ original_html|safe }}
+                        <div id="originalTableContainer">
+                            {{ original_html|safe }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -31,12 +59,21 @@
         <div class="col-lg-6">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Processed Data</h5>
+                    <div>
+                        <h5 class="mb-0 d-inline-block me-3">Processed Data</h5>
+                        <select id="historySelector" class="form-select form-select-sm d-inline-block w-auto" onchange="loadComparisonData()">
+                            {% for index, message in history_options %}
+                                <option value="{{ index }}" {% if index == selected_history_index %}selected{% endif %}>Step {{ index }}: {{ message }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">Shape: {{ processed_shape[0] }} rows, {{ processed_shape[1] }} columns</p>
+                    <p class="text-muted">Shape: <span id="processedShape">{{ processed_shape[0] }} rows, {{ processed_shape[1] }} columns</span></p>
                     <div class="table-container" style="max-height: 70vh; overflow-y: auto;">
-                        {{ processed_html|safe }}
+                        <div id="processedTableContainer">
+                            {{ processed_html|safe }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -46,17 +83,85 @@
 {% endblock %}
 
 {% block extra_js %}
-<!--<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>-->
-<!--<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>-->
 <script>
-$(document).ready(function() {
-    // It's tricky to sync scrolling perfectly with DataTables due to headers/footers.
-    // A simpler approach for now is to just make both tables independently scrollable.
-    $('table').DataTable({
-        "scrollX": true,
-        "paging": true,
-        "searching": true
+    let originalTable;
+    let processedTable;
+
+    function initializeDataTables() {
+        if (originalTable) originalTable.destroy();
+        if (processedTable) processedTable.destroy();
+
+        originalTable = $('#original-table').DataTable({
+            "scrollX": true,
+            "paging": true,
+            "searching": true,
+            "ordering": true
+        });
+
+        processedTable = $('#processed-table').DataTable({
+            "scrollX": true,
+            "paging": true,
+            "searching": true,
+            "ordering": true
+        });
+    }
+
+    function loadComparisonData() {
+        const historyIndex = $('#historySelector').val();
+        $.ajax({
+            url: `/get_comparison_data/${historyIndex-1}`,
+            method: 'GET',
+            success: function(response) {
+                $('#processedTableContainer').html(response.processed_html);
+                $('#processedShape').text(`${response.processed_shape[0]} rows, ${response.processed_shape[1]} columns`);
+                initializeDataTables();
+            },
+            error: function() { alert('Error loading data.'); }
+        });
+    }
+
+    function goToRow() {
+        const searchTerm = $('#rowSearchInput').val().trim();
+        if (!searchTerm) return;
+
+        ['#original-table', '#processed-table'].forEach(tableId => {
+            const table = $(tableId).DataTable();
+            table.rows().nodes().to$().removeClass('search-highlight');
+            
+            table.rows().every(function() {
+                const rowData = this.data();
+                if (String(rowData[0]).trim() === searchTerm) {
+                    const node = this.node();
+                    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    $(node).addClass('search-highlight');
+                    setTimeout(() => $(node).removeClass('search-highlight'), 2000);
+                }
+            });
+        });
+    }
+
+    function goToColumn() {
+        const searchTerm = $('#colSearchInput').val().trim();
+        if (!searchTerm) return;
+
+        ['#original-table', '#processed-table'].forEach(tableId => {
+            const table = $(tableId).DataTable();
+            const colIndex = table.columns().header().to$().filter(function() {
+                return $(this).text().trim() === searchTerm;
+            }).index();
+
+            if (colIndex > -1) {
+                const header = $(table.column(colIndex).header());
+                header[0].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                
+                $(table.column(colIndex).nodes()).addClass('search-highlight');
+                setTimeout(() => $(table.column(colIndex).nodes()).removeClass('search-highlight'), 2000);
+            }
+        });
+    }
+
+    $(document).ready(function() {
+        initializeDataTables();
     });
-});
 </script>
 {% endblock %}

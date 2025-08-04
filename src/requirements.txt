@@ -5,7 +5,10 @@ plotly
 scipy
 scikit-learn
 Flask-Session
+statsmodels
 pyopenms
 missingpy @ git+https://github.com/Stephen-Kamau/missingpy.git@1bac83260e98b9b063dfbe9ee5e9e961cf8f13f3
 data-science-types
 pandas-stubs
+rpy2
+scikit-bio

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Imputation - Omics Data Analysis{% endblock %}
+{% block title %}Imputation - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -30,6 +30,20 @@
                 </div>
             </div>
             
+            <!-- Data Cleaning -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-broom me-2"></i>Data Cleaning</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Use this utility to handle specific data cleaning tasks.</p>
+                    <button type="button" id="replaceZerosBtn" class="btn btn-warning w-100">
+                        <i class="fas fa-eraser me-2"></i>Replace All Zeros with NaN
+                    </button>
+                    <small class="form-text text-muted mt-2 d-block">This is useful if zeros in your data represent missing values and you need to mark them for imputation.</small>
+                </div>
+            </div>
+
             <!-- Imputation Methods -->
             <div class="card">
                 <div class="card-header">
@@ -306,6 +320,36 @@
             $('#thresholdValue').text($(this).val());
         });
         updateImputationOptions();
+
+        $('#replaceZerosBtn').on('click', function() {
+            const btn = $(this);
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Replacing...');
+
+            $.ajax({
+                url: '{{ url_for("replace_zeros") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                success: function(response) {
+                    if (response.success) {
+                        showFlashMessage(response.message, 'success');
+                        $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                        updateProcessingSteps(response.steps);
+                        if (response.missing_heatmap) {
+                            const heatmapData = JSON.parse(response.missing_heatmap);
+                            Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout);
+                        }
+                    } else {
+                        showFlashMessage(response.error, 'danger');
+                    }
+                },
+                error: function() {
+                    showFlashMessage('An error occurred while replacing zeros.', 'danger');
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html('<i class="fas fa-eraser me-2"></i>Replace All Zeros with NaN');
+                }
+            });
+        });
     });
 
     document.addEventListener('DOMContentLoaded', function() {
