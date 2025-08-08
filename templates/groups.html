@@ -27,7 +27,7 @@
                                 <div class="col-md-3">
                                     <label for="nGroups" class="form-label">Number of Groups:</label>
                                     <select class="form-select" id="nGroups" onchange="updateGroupInputs()">
-                                        {% for i in range(9) %}
+                                        {% for i in range(11) %}
                                         <option value="{{ i }}" {% if i == n_groups %}selected{% endif %}>{{ i }}{% if i == 0 %} (No groups){% endif %}</option>
                                         {% endfor %}
                                     </select>
@@ -36,6 +36,10 @@
                                     <small class="text-muted">
                                         <i class="fas fa-info-circle me-1"></i>
                                         Define or modify experimental groups for your sample data.
+                                    </small>
+                                    <small class="text-muted d-block mt-1">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        For automatic grouping, add a regex in parentheses to the group name (e.g., 'Control (C.*)').
                                     </small>
                                 </div>
                             </div>
@@ -101,7 +105,7 @@
                     {% for group_name, count in group_summary.items() %}
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="fw-bold">{{ group_name }}:</span>
-                        <span class="badge bg-primary">{{ count }} columns</span>
+                        <span class="badge" style="background-color: #C177F2">{{ count }} columns</span>
                     </div>
                     {% endfor %}
                     
@@ -139,6 +143,7 @@
 <script>
     let groupAssignments = {{ group_assignments|tojson|safe }};
     let groupNames = {{ group_names|tojson|safe }};
+    let groupRegexes = {{ group_regexes|tojson|safe }};
 
     function updateGroupInputs() {
         const nGroups = parseInt($('#nGroups').val());
@@ -151,13 +156,15 @@
             const row = $('<div class="row g-3"></div>');
             for (let i = 1; i <= nGroups; i++) {
                 const currentName = groupNames[i] || `Group ${i}`;
+                const currentRegex = groupRegexes[i] || '';
+                const inputValue = currentRegex ? `${currentName} (${currentRegex})` : currentName;
                 newGroupNames[i] = currentName;
                 const col = $(`
-                    <div class="col-md-4">
-                        <label for="group${i}Name" class="form-label">Group ${i} Name:</label>
+                    <div class="col-md-6">
+                        <label for="group${i}Name" class="form-label">Group ${i} Name (and optional Regex):</label>
                         <input type="text" class="form-control group-name-input" id="group${i}Name" 
-                               data-group="${i}" value="${currentName}"
-                               onchange="updateGroupName(${i})">
+                               data-group="${i}" value="${inputValue}"
+                               onchange="handleGroupInputChanged(${i})">
                     </div>
                 `);
                 row.append(col);
@@ -168,9 +175,26 @@
         updateAllGroupAssignments();
     }
 
-    function updateGroupName(groupIndex) {
-        const input = $(`#group${groupIndex}Name`);
-        const name = input.val().trim();
+    function handleGroupInputChanged(groupIndex) {
+        const fullInput = $(`#group${groupIndex}Name`).val().trim();
+        const openParenIndex = fullInput.indexOf('(');
+        const closeParenIndex = fullInput.lastIndexOf(')');
+        
+        let name = fullInput;
+        let regexPattern = '';
+
+        if (openParenIndex !== -1 && closeParenIndex !== -1 && closeParenIndex > openParenIndex) {
+            name = fullInput.substring(0, openParenIndex).trim();
+            regexPattern = fullInput.substring(openParenIndex + 1, closeParenIndex).trim();
+        }
+
+        updateGroupName(groupIndex, name);
+        if (regexPattern) { // Only call if regexPattern is not empty
+            applyRegexToGroup(groupIndex, regexPattern);
+        }
+    }
+
+    function updateGroupName(groupIndex, name) {
         groupNames[groupIndex] = name || `Group ${groupIndex}`;
         updateAllGroupAssignments();
     }
@@ -236,7 +260,8 @@
         const data = {
             groupAssignments: groupAssignments,
             groupNames: groupNames,
-            nGroups: nGroups
+            nGroups: nGroups,
+            groupRegexes: groupRegexes
         };
 
         $.ajax({
@@ -254,6 +279,34 @@
             },
             error: function() {
                 alert('An unexpected error occurred.');
+            }
+        });
+    }
+
+    function applyRegexToGroup(groupId, regexPattern) {
+        if (!regexPattern) {
+            return; // Do nothing if regex is empty
+        }
+
+        $.ajax({
+            url: '/apply_regex_grouping',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                groupId: groupId,
+                regexPattern: regexPattern
+            }),
+            success: function(response) {
+                if (response.success) {
+                    groupAssignments = response.groupAssignments; // Update local groupAssignments
+                    updateAllGroupAssignments(); // Re-render checkboxes
+                    // alert(response.message); // Removed alert for smoother UX
+                } else {
+                    alert('Error applying regex: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('An error occurred while applying regex.');
             }
         });
     }

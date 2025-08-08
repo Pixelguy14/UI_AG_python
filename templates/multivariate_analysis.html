@@ -46,13 +46,23 @@
     <div class="row">
         <div class="col-lg-6 mb-4">
             <div class="card h-100">
-                <div class="card-header"><h5 class="mb-0" id="plotTitle1">Plot 1</h5></div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="plotTitle1">Plot 1</h5>
+                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('plotContainer1', 'multivariate_plot_1')">
+                        <i class="fas fa-download me-2"></i>Export as SVG
+                    </button>
+                </div>
                 <div class="card-body"><div id="plotContainer1" style="min-height: 500px;"></div></div>
             </div>
         </div>
         <div class="col-lg-6 mb-4">
             <div class="card h-100">
-                <div class="card-header"><h5 class="mb-0" id="plotTitle2">Plot 2</h5></div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="plotTitle2">Plot 2</h5>
+                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('plotContainer2', 'multivariate_plot_2')">
+                        <i class="fas fa-download me-2"></i>Export as SVG
+                    </button>
+                </div>
                 <div class="card-body"><div id="plotContainer2" style="min-height: 500px;"></div></div>
             </div>
         </div>
@@ -63,7 +73,12 @@
         <!-- HCA -->
         <div class="col-lg mb-4">
             <div class="card h-100">
-                <div class="card-header"><h5 class="mb-0">Hierarchical Clustering Analysis (HCA)</h5></div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Hierarchical Clustering Analysis (HCA)</h5>
+                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT_2('hcaPlotContainer', 'hca_plot')">
+                        <i class="fas fa-download me-2"></i>Export as SVG
+                    </button>
+                </div>
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-6">
@@ -88,6 +103,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='js/export.js') }}"></script>
 <script>
 function loadPlots() {
     const index1 = $('#plotSelector1').val();

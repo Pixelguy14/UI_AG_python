@@ -18,8 +18,12 @@ def loadFile(fileName):
     elif extension.lower() == ".csv":
         print("Loading a CSV file")
         return loadDF_TSV_CSV(fileName) # For csv
+    elif extension.lower() in [".xlsx", ".xls"]:
+        print("Loading an Excel file")
+        return pd.read_excel(fileName)
     else:
         return pd.DataFrame() # Explicitly return empty dataframe
+
 
 
 def loadDF_Consensus(myConsensusXML):
@@ -194,10 +198,10 @@ def loadDF_TSV_CSV(myTSVCSVFile,separator=None):
         # Use pandas to read the TSV file, specifying tab as the separator
         # If there is not TSV, ignore separator
         if not separator:
-            df = pd.read_csv(myTSVCSVFile, index_col=0) # Set first column as index
+            df = pd.read_csv(myTSVCSVFile) # Set first column as index
             print(f"Successfully loaded CSV file: {myTSVCSVFile}")
         else:
-            df = pd.read_csv(myTSVCSVFile, sep=separator, index_col=0) # Set first column as index
+            df = pd.read_csv(myTSVCSVFile, sep=separator) # Set first column as index
             print(f"Successfully loaded TSV file: {myTSVCSVFile}")
         return df
     except FileNotFoundError:

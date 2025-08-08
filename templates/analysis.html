@@ -8,10 +8,6 @@
 
 {% block content %}
 <style>
-    #analysis-table {
-        table-layout: fixed;
-        width: 100%;
-    }
     #analysis-table thead th {
         position: sticky;
         top: 0;
@@ -29,6 +25,16 @@
                         <i class="fas fa-table me-2"></i>
                         Processed Data
                     </h5>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-download me-2"></i>Export Data
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='analysis') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='analysis') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='analysis') }}">Export as Excel</a></li>
+                        </ul>
+                    </div>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">Shape: {{ shape[0] }} rows, {{ shape[1] }} columns</p>

@@ -7,7 +7,6 @@ from sklearn.decomposition import PCA # type: ignore
 import plotly.express as px # type: ignore
 from scipy.cluster.hierarchy import linkage, dendrogram # type: ignore
 from sklearn.cross_decomposition import PLSRegression # type: ignore
-from plotly.subplots import make_subplots # type: ignore
 
 def _create_empty_plot_with_message(title, message="No data available for plotting."):
     fig = go.Figure()
@@ -147,7 +146,8 @@ def create_distribution_plot(data_series, column_name):
     
     # Histogram
     fig.add_trace(go.Histogram(
-        x=data_series,
+        x=data_series.tolist(),
+        histnorm='probability density',
         nbinsx=30,
         name='Histogram',
         opacity=0.7
@@ -664,282 +664,176 @@ def create_oplsda_plot(df, title, group_vector=None, group_names=None):
     )
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
+def create_volcano_plot(
+    results_df: pd.DataFrame,
+    metadata_df: pd.DataFrame = None,
+    p_value_col: str = 'p_adj',
+    p_thresh: float = 0.05,
+    fc_thresh: float = 1.0
+) -> str:
+    """
+    Generates a JSON-serialized volcano plot from differential analysis results.
+    Properly handles both t-test (log2FC) and ANOVA (eta_squared) results.
 
-def create_volcano_plot(results_df, p_value_col='p_adj', log2fc_col='log2FC', p_thresh=0.05, fc_thresh=1.0):
+    Args:
+        results_df: DataFrame containing statistical results
+        metadata_df: Optional DataFrame with additional feature metadata
+        p_value_col: Column name for p-values (default 'p_adj')
+        p_thresh: Significance threshold (default 0.05)
+        fc_thresh: Effect size threshold (default 1.0 for log2FC, 0.1 for eta_squared)
+
+    Returns:
+        JSON string of the plotly figure
     """
-    Generates an interactive volcano plot from differential analysis results using plotly.graph_objects.
-    """
-    # Use p_value_col if it exists, otherwise default to 'p_value'
+    # Validate input columns
+    if 'log2FC' in results_df.columns:
+        effect_size_col = 'log2FC'
+        xaxis_title = 'log₂ Fold Change'
+        symmetric = True
+    elif 'eta_squared' in results_df.columns:
+        effect_size_col = 'eta_squared'
+        xaxis_title = 'η² (Eta Squared)'
+        symmetric = False
+        fc_thresh = 0.1 if fc_thresh == 1.0 else fc_thresh  # Default threshold for eta_squared
+    else:
+        return json.dumps(
+            _create_empty_plot_with_message("Volcano Plot", "Required effect size column (log2FC or eta_squared) not found"),
+            cls=plotly.utils.PlotlyJSONEncoder
+        )
+
+    # Fallback to p_value if specified column missing
     if p_value_col not in results_df.columns:
-        p_value_col = 'p_value'
-    
-    if p_value_col not in results_df.columns or log2fc_col not in results_df.columns:
-        return _create_empty_plot_with_message('Volcano Plot', "Required columns (p_value/p_adj, log2FC) not found.")
+        p_value_col = 'p_value' if 'p_value' in results_df.columns else None
 
-    # Ensure numeric types and handle potential non-numeric values
-    results_df[p_value_col] = pd.to_numeric(results_df[p_value_col], errors='coerce')
-    results_df[log2fc_col] = pd.to_numeric(results_df[log2fc_col], errors='coerce')
-    results_df = results_df.dropna(subset=[p_value_col, log2fc_col])
+    if not p_value_col:
+        return json.dumps(
+            _create_empty_plot_with_message("Volcano Plot", "No valid p-value column found"),
+            cls=plotly.utils.PlotlyJSONEncoder
+        )
 
-    if results_df.empty:
-        return _create_empty_plot_with_message('Volcano Plot', "No valid data points after cleaning.")
+    # Create working copy and clean data
+    plot_data = results_df[[effect_size_col, p_value_col]].copy()
+    plot_data[p_value_col] = pd.to_numeric(plot_data[p_value_col], errors='coerce')
+    plot_data[effect_size_col] = pd.to_numeric(plot_data[effect_size_col], errors='coerce')
+    plot_data.dropna(inplace=True)
 
-    results_df['log_p'] = -np.log10(results_df[p_value_col])
+    if plot_data.empty:
+        return json.dumps(
+            _create_empty_plot_with_message("Volcano Plot", "No valid data points after cleaning"),
+            cls=plotly.utils.PlotlyJSONEncoder
+        )
+
+    # Handle zero p-values
+    plot_data['p_processed'] = plot_data[p_value_col].replace(0, np.finfo(float).eps)
+    plot_data['neg_log_p'] = -np.log10(plot_data['p_processed'])
 
     # Determine significance
-    results_df['significant'] = (results_df[p_value_col] < p_thresh) & (abs(results_df[log2fc_col]) > fc_thresh)
-    
+    if symmetric:  # log2FC (two-tailed)
+        plot_data['significant'] = (
+            (plot_data[p_value_col] < p_thresh) & 
+            (plot_data[effect_size_col].abs() > fc_thresh)
+        )
+    else:  # eta_squared (one-tailed)
+        plot_data['significant'] = (
+            (plot_data[p_value_col] < p_thresh) & 
+            (plot_data[effect_size_col] > fc_thresh)
+        )
+
+    # Prepare hover data
+    hover_data = []
+    for idx, row in plot_data.iterrows():
+        hover_text = [
+            f"<b>Feature:</b> {idx}",
+            f"<b>{xaxis_title}:</b> {row[effect_size_col]:.3f}",
+            f"<b>p-value:</b> {row[p_value_col]:.2e}",
+            f"<b>-log₁₀(p):</b> {row['neg_log_p']:.1f}"
+        ]
+        
+        # Add metadata if available
+        if metadata_df is not None and idx in metadata_df.index:
+            for col in metadata_df.columns:
+                hover_text.append(f"<b>{col}:</b> {metadata_df.loc[idx, col]}")
+        
+        hover_data.append("<br>".join(hover_text))
+
+    # Create figure
     fig = go.Figure()
 
-    # Add non-significant points
-    fig.add_trace(go.Scatter(
-        x=results_df[~results_df['significant']][log2fc_col].tolist(),
-        y=results_df[~results_df['significant']]['log_p'].tolist(),
-        mode='markers',
-        marker=dict(color='gray', size=8),
-        name='Not Significant',
-        text=results_df[~results_df['significant']].index.tolist(),
-        hoverinfo='text'
-    ))
+    # Add traces
+    for significance, color in [(True, 'red'), (False, 'gray')]:
+        mask = plot_data['significant'] == significance
+        name = 'Significant' if significance else 'Non-significant'
+        
+        fig.add_trace(go.Scatter(
+            x=plot_data.loc[mask, effect_size_col].tolist(),
+            y=plot_data.loc[mask, 'neg_log_p'].tolist(),
+            mode='markers',
+            marker=dict(
+                color=color,
+                size=8,
+                opacity=0.7,
+                line=dict(width=0.5, color='black')
+            ),
+            name=name,
+            text=[hover_data[i] for i in np.where(mask)[0]],
+            hoverinfo='text'
+        ))
 
-    # Add significant points
-    fig.add_trace(go.Scatter(
-        x=results_df[results_df['significant']][log2fc_col].tolist(),
-        y=results_df[results_df['significant']]['log_p'].tolist(),
-        mode='markers',
-        marker=dict(color='red', size=8),
-        name='Significant',
-        text=results_df[results_df['significant']].index.tolist(),
-        hoverinfo='text'
-    ))
+    # Calculate axis ranges
+    x_min = plot_data[effect_size_col].min()
+    x_max = plot_data[effect_size_col].max()
+    y_max = plot_data['neg_log_p'].max() * 1.1
 
-    # Add threshold lines
-    fig.add_shape(
-        type="line",
-        x0=results_df[log2fc_col].min(),
-        y0=-np.log10(p_thresh),
-        x1=results_df[log2fc_col].max(),
-        y1=-np.log10(p_thresh),
-        line=dict(color="red", width=1, dash="dash"),
-        name=f"P-value threshold ({p_thresh})"
-    )
-    fig.add_shape(
-        type="line",
-        x0=fc_thresh,
-        y0=results_df['log_p'].min(),
-        x1=fc_thresh,
-        y1=results_df['log_p'].max(),
-        line=dict(color="blue", width=1, dash="dash"),
-        name=f"FC threshold ({fc_thresh})"
-    )
-    fig.add_shape(
-        type="line",
-        x0=-fc_thresh,
-        y0=results_df['log_p'].min(),
-        x1=-fc_thresh,
-        y1=results_df['log_p'].max(),
-        line=dict(color="blue", width=1, dash="dash"),
-        name=f"FC threshold ({-fc_thresh})"
+    # Add significance lines
+    fig.add_hline(
+        y=-np.log10(p_thresh),
+        line_dash="dash",
+        line_color="red",
+        annotation_text=f"p={p_thresh}",
+        annotation_position="top right"
     )
 
-    fig.update_layout(
-        title='Volcano Plot',
-        xaxis_title='Log2 Fold Change',
-        yaxis_title='-Log10 P-value',
-        template='plotly_white',
-        showlegend=True,
-        hovermode='closest'
-    )
-    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-
-def create_clustergram(data_df, results_df, top_n=50, p_value_col='p_adj', group_vector=None, group_names=None, distance_metric='euclidean', linkage_method='average'):
-    """
-    Generates a clustered heatmap (clustergram) of the top N significant features.
-    """
-    # Use p_value_col if it exists, otherwise default to 'p_value'
-    if p_value_col not in results_df.columns:
-        p_value_col = 'p_value'
-
-    if p_value_col not in results_df.columns:
-        return _create_empty_plot_with_message('Clustergram', "Required p_value column not found.")
-
-    # Filter for significant features
-    significant_features_df = results_df[results_df[p_value_col] < 0.05]
-    if significant_features_df.empty:
-        return _create_empty_plot_with_message('Clustergram', "No significant features found to generate a clustergram.")
-
-    # Select top N features by p-value
-    significant_features = significant_features_df.nsmallest(top_n, p_value_col).index
-    
-    # Prepare data for clustergram: samples as rows, features as columns
-    # data_df has features as rows, samples as columns. So, transpose it.
-    plot_data = data_df.loc[significant_features].T
-
-    # Z-score normalization (per feature, which are now columns)
-    # Avoid division by zero for features with zero standard deviation
-    plot_data_zscored = plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=0)
-    
-    # Handle potential NaN values after z-scoring (e.g., if a feature was all zeros)
-    plot_data_zscored = plot_data_zscored.fillna(0)
-
-    if plot_data_zscored.empty:
-        return _create_empty_plot_with_message('Clustergram', "No valid data after processing for clustergram.")
-
-    # --- Hierarchical Clustering ---
-    # Cluster rows (samples)
-    row_linkage = linkage(plot_data_zscored.values, method=linkage_method, metric=distance_metric)
-    row_dendro_data = dendrogram(row_linkage, no_plot=True, labels=plot_data_zscored.index.tolist())
-
-    # Cluster columns (features)
-    col_linkage = linkage(plot_data_zscored.T.values, method=linkage_method, metric=distance_metric)
-    col_dendro_data = dendrogram(col_linkage, no_plot=True, labels=plot_data_zscored.columns.tolist())
-
-    # Reorder data based on dendrograms
-    plot_data_reordered = plot_data_zscored.iloc[row_dendro_data['leaves'], col_dendro_data['leaves']]
-
-    print(f"\n--- Debugging Clustergram Data ---")
-    print(f"plot_data_zscored shape: {plot_data_zscored.shape}")
-    print(f"plot_data_reordered shape: {plot_data_reordered.shape}")
-    print(f"row_dendro_data icoord min/max: {np.min(row_dendro_data['icoord'])}, {np.max(row_dendro_data['icoord'])}")
-    print(f"row_dendro_data dcoord min/max: {np.min(row_dendro_data['dcoord'])}, {np.max(row_dendro_data['dcoord'])}")
-    print(f"col_dendro_data icoord min/max: {np.min(col_dendro_data['icoord'])}, {np.max(col_dendro_data['icoord'])}")
-    print(f"col_dendro_data dcoord min/max: {np.min(col_dendro_data['dcoord'])}, {np.max(col_dendro_data['dcoord'])}")
-    print(f"--- End Debugging Clustergram Data ---\n")
-
-    # --- Create Color Mapping for Row Dendrogram (Samples) ---
-    group_color_map = {}
-    if group_vector and group_names:
-        colors = px.colors.qualitative.Vivid
-        unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
-        group_color_map = {gid: colors[i % len(colors)] for i, gid in enumerate(unique_group_ids)}
-    
-    leaf_color_map = {}
-    for sample_label in row_dendro_data['ivl']:
-        color = '#808080'  # default grey
-        if group_vector and sample_label in group_vector and group_vector[sample_label].get('groups'):
-            first_group_id = str(group_vector[sample_label]['groups'][0])
-            if first_group_id in group_color_map:
-                color = group_color_map[first_group_id]
-        leaf_color_map[sample_label] = color
-
-    # Define subplot grid: 2 rows, 2 columns.
-    # Top-left is empty, top-right is column dendrogram.
-    # Bottom-left is row dendrogram, bottom-right is heatmap.
-    fig = make_subplots(
-        rows=2, cols=2,
-        column_widths=[0.2, 0.8], # Row dendrogram width, Heatmap width
-        row_heights=[0.2, 0.8],   # Column dendrogram height, Heatmap height
-        vertical_spacing=0.01,
-        horizontal_spacing=0.01,
-        shared_xaxes=False,
-        shared_yaxes=False,
-        # Specs define the type of subplot and if it spans rows/cols
-        specs=[
-            [{"type": "xy", "rowspan": 1, "colspan": 1}, {"type": "xy", "rowspan": 1, "colspan": 1}],
-            [{"type": "xy", "rowspan": 1, "colspan": 1}, {"type": "heatmap", "rowspan": 1, "colspan": 1}]
+    if symmetric:
+        fig.add_vline(
+            x=-fc_thresh,
+            line_dash="dash",
+            line_color="blue"
+        )
+        fig.add_vline(
+            x=fc_thresh,
+            line_dash="dash",
+            line_color="blue"
+        )
+        x_range = [
+            min(x_min, -fc_thresh * 1.5),
+            max(x_max, fc_thresh * 1.5)
         ]
-    )
+    else:
+        fig.add_vline(
+            x=fc_thresh,
+            line_dash="dash",
+            line_color="blue",
+            annotation_text=f"η²={fc_thresh}",
+            annotation_position="top right"
+        )
+        x_range = [0, max(x_max, fc_thresh * 1.5)]
 
-    # Add Column Dendrogram
-    for i, (icoord, dcoord) in enumerate(zip(col_dendro_data['icoord'], col_dendro_data['dcoord'])):
-        fig.add_trace(go.Scatter(
-            x=icoord,
-            y=dcoord,
-            mode='lines',
-            line=dict(color='rgb(50,50,50)', width=2),
-            hoverinfo='none',
-            showlegend=False,
-            xaxis='x2',  # Explicitly assign to top-right x-axis
-            yaxis='y2'   # Explicitly assign to top-right y-axis
-        ), row=1, col=2) # Top-right subplot
-
-    # Add Row Dendrogram
-    for i, (icoord, dcoord) in enumerate(zip(row_dendro_data['icoord'], row_dendro_data['dcoord'])):
-        # Use a default color for all dendrogram lines for now
-        segment_color = 'rgb(50,50,50)' 
-
-        fig.add_trace(go.Scatter(
-            x=dcoord, # x and y are swapped for horizontal dendrogram
-            y=icoord,
-            mode='lines',
-            line=dict(color=segment_color, width=2),
-            hoverinfo='none',
-            showlegend=False,
-            xaxis='x',  # Explicitly assign to bottom-left x-axis
-            yaxis='y3'   # Explicitly assign to bottom-left y-axis
-        ), row=2, col=1) # Bottom-left subplot
-
-    # Add Heatmap
-    fig.add_trace(go.Heatmap(
-        z=plot_data_reordered.values,
-        x=plot_data_reordered.columns.tolist(),
-        y=plot_data_reordered.index.tolist(),
-        colorscale='Viridis',
-        colorbar=dict(title='Z-score'),
-        hoverinfo='x+y+z'
-    ), row=2, col=2) # Bottom-right subplot
-
-    # --- Layout and Customization ---
+    # Final layout
     fig.update_layout(
-        title=f'Clustergram of Top {len(significant_features)} Significant Features',
+        title=dict(
+            text=f"Volcano Plot ({plot_data['significant'].sum()} significant features)",
+            x=0.5,
+            xanchor='center'
+        ),
+        xaxis_title=xaxis_title,
+        yaxis_title='-log₁₀(p-value)',
         template='plotly_white',
-        autosize=True,
-        height=800,
-        width=1000,
         hovermode='closest',
         showlegend=True,
-        margin=dict(l=50, r=50, t=100, b=100),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, domain=[0, 0.2]), # Row dendrogram x-axis (distance)
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, domain=[0.8, 1]), # Column dendrogram y-axis (distance)
-        xaxis2=dict(showgrid=False, zeroline=False, showticklabels=False, domain=[0.2, 1]), # Column dendrogram x-axis (feature labels)
-        yaxis2=dict(showgrid=False, zeroline=False, showticklabels=False, domain=[0.8, 1]), # Column dendrogram y-axis (distance)
-        xaxis3=dict(showgrid=False, zeroline=False, showticklabels=False, domain=[0, 0.2]), # Row dendrogram x-axis (distance)
-        yaxis3=dict(showgrid=False, zeroline=False, showticklabels=False, domain=[0, 0.8])  # Row dendrogram y-axis (sample labels)
+        xaxis=dict(range=x_range),
+        yaxis=dict(range=[0, y_max]),
+        height=600,
+        margin=dict(l=50, r=50, b=50, t=80)
     )
-
-    # Update axes for dendrograms and heatmap
-    fig.update_xaxes(showgrid=False, zeroline=False, row=1, col=2) # Column dendrogram x-axis
-    fig.update_yaxes(showgrid=False, zeroline=False, row=1, col=2) # Column dendrogram y-axis (distance)
-
-    fig.update_xaxes(showgrid=False, zeroline=False, row=2, col=1) # Row dendrogram x-axis (distance)
-    fig.update_yaxes(showgrid=False, zeroline=False, row=2, col=1) # Row dendrogram y-axis
-
-    # Heatmap axes
-    fig.update_xaxes(title_text="Features", tickangle=45, row=2, col=2)
-    fig.update_yaxes(title_text="Samples", row=2, col=2)
-
-    # Prepare colored y-axis labels for row dendrogram (samples)
-    # This needs to be done after the heatmap is added to ensure correct axis mapping
-    tickvals_row = []
-    ticktext_row = []
-    for i, sample_label in enumerate(row_dendro_data['ivl']):
-        tickvals_row.append(i) # Use index as tick value
-        color = leaf_color_map.get(sample_label, '#808080')
-        ticktext_row.append(f'<span style="color:{color};">{sample_label}</span>')
-
-    fig.update_yaxes(
-        tickvals=[i for i in range(len(row_dendro_data['ivl']))],
-        ticktext=[f'<span style="color:{leaf_color_map.get(label, "#808080")};">{label}</span>' for label in plot_data_reordered.index],
-        row=2, col=2
-    )
-
-    # Prepare colored x-axis labels for column dendrogram (features)
-    fig.update_xaxes(
-        tickvals=[i for i in range(len(col_dendro_data['ivl']))],
-        ticktext=plot_data_reordered.columns.tolist(),
-        row=2, col=2
-    )
-
-    # Add custom legend for groups
-    if group_names and group_color_map:
-        for group_id, group_name in group_names.items():
-            if group_id != '0' and group_id in group_color_map:
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None], mode='markers',
-                    marker=dict(size=10, color=group_color_map[group_id]),
-                    legendgroup=group_name,
-                    showlegend=True,
-                    name=group_name
-                ), row=1, col=1) # Add to an empty subplot or a corner to display legend
 
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)

@@ -49,6 +49,10 @@
                                         Define experimental groups for your sample data (e.g., control vs treatment, healthy vs diseased). 
                                         Columns can belong to multiple groups.
                                     </small>
+                                    <small class="text-muted d-block mt-1">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        For automatic grouping, add a regex in parentheses to the group name (e.g., 'Control (C.*)').
+                                    </small>
                                 </div>
                             </div>
                             
@@ -137,6 +141,7 @@
     let assignments = {};
     let groupAssignments = {}; // Will store arrays of group IDs for each column
     let groupNames = {0: 'Undefined'};
+    let groupRegexes = {{ group_regexes|tojson|safe }};
     
     $(document).ready(function() {
         // Initialize assignments
@@ -190,18 +195,22 @@
             const row = $('<div class="row g-3"></div>');
             
             for (let i = 1; i <= nGroups; i++) {
+                const currentName = groupNames[i] || `Group ${i}`;
+                const currentRegex = groupRegexes[i] || '';
+                const inputValue = currentRegex ? `${currentName} (${currentRegex})` : currentName;
                 const col = $(`
-                    <div class="col-md-4">
-                        <label for="group${i}Name" class="form-label">Group ${i} Name:</label>
+                    <div class="col-md-6">
+                        <label for="group${i}Name" class="form-label">Group ${i} Name (and optional Regex):</label>
                         <input type="text" class="form-control group-name-input" id="group${i}Name" 
-                               data-group="${i}" placeholder="e.g., ${i === 1 ? 'Control' : i === 2 ? 'Treatment' : 'Group ' + i}"
-                               onchange="updateGroupName(${i})">
+                               data-group="${i}" placeholder="e.g., Control (C.*)"
+                               value="${inputValue}"
+                               onchange="handleGroupInputChanged(${i})">
                     </div>
                 `);
                 row.append(col);
                 
                 // Initialize group name
-                groupNames[i] = `Group ${i}`;
+                groupNames[i] = currentName;
             }
             
             container.append(row);
@@ -211,9 +220,26 @@
         updateAllGroupAssignments();
     }
     
-    function updateGroupName(groupIndex) {
-        const input = $(`#group${groupIndex}Name`);
-        const name = input.val().trim();
+    function handleGroupInputChanged(groupIndex) {
+        const fullInput = $(`#group${groupIndex}Name`).val().trim();
+        const openParenIndex = fullInput.indexOf('(');
+        const closeParenIndex = fullInput.lastIndexOf(')');
+        
+        let name = fullInput;
+        let regexPattern = '';
+
+        if (openParenIndex !== -1 && closeParenIndex !== -1 && closeParenIndex > openParenIndex) {
+            name = fullInput.substring(0, openParenIndex).trim();
+            regexPattern = fullInput.substring(openParenIndex + 1, closeParenIndex).trim();
+        }
+
+        updateGroupName(groupIndex, name);
+        if (regexPattern) { // Only call if regexPattern is not empty
+            applyRegexToGroup(groupIndex, regexPattern);
+        }
+    }
+
+    function updateGroupName(groupIndex, name) {
         groupNames[groupIndex] = name || `Group ${groupIndex}`;
         
         // Update all group assignment containers with new name
@@ -346,7 +372,8 @@
             assignments: assignments,
             groupAssignments: groupAssignments,
             groupNames: groupNames,
-            nGroups: nGroups
+            nGroups: nGroups,
+            groupRegexes: groupRegexes
         };
         
         $.ajax({
@@ -364,6 +391,34 @@
             },
             error: function() {
                 alert('Error saving assignments. Please try again.');
+            }
+        });
+    }
+
+    function applyRegexToGroup(groupId, regexPattern) {
+        if (!regexPattern) {
+            return; // Do nothing if regex is empty
+        }
+
+        $.ajax({
+            url: '/apply_regex_grouping',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                groupId: groupId,
+                regexPattern: regexPattern
+            }),
+            success: function(response) {
+                if (response.success) {
+                    groupAssignments = response.groupAssignments; // Update local groupAssignments
+                    updateAllGroupAssignments(); // Re-render checkboxes
+                    // alert(response.message); // Removed alert for smoother UX
+                } else {
+                    alert('Error applying regex: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('An error occurred while applying regex.');
             }
         });
     }

@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify, send_file
 import pandas as pd
-# import io
+import io
 import os
 import numpy as np
 from flask_session import Session  # Import Flask-Session
 from werkzeug.utils import secure_filename
+from scipy.cluster.hierarchy import linkage, dendrogram # type: ignore
 
 from src.functions.exploratory_data import (
     loadFile,
@@ -60,10 +61,9 @@ from src.functions.plot_definitions import (
     create_violinplot,
     create_plsda_plot,
     create_oplsda_plot,
-    create_volcano_plot,
-    create_clustergram
+    create_volcano_plot
 )
-from src.views.distributionTabView import distribution_bp
+
 from src.functions.statistical_tests import (
     run_t_test, 
     run_wilcoxon_rank_sum, 
@@ -83,7 +83,6 @@ logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('matplotlib').setLevel(logging.INFO)
 
 app = Flask(__name__)
-app.register_blueprint(distribution_bp)
 
 # Configure Flask-Session
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -105,6 +104,8 @@ def before_request():
         session['df_main'] = None
     if 'df_metadata' not in session:
         session['df_metadata'] = None
+    if 'df_meta_thd' not in session:
+        session['df_meta_thd'] = None
     if 'df_sample' not in session:
         session['df_sample'] = None
     if 'df_history' not in session:
@@ -131,6 +132,10 @@ def before_request():
         session['processing_steps'] = []
     if 'differential_analysis_results' not in session:
         session['differential_analysis_results'] = None
+    if 'latest_differential_analysis_method' not in session:
+        session['latest_differential_analysis_method'] = None
+    if 'group_regexes' not in session:
+        session['group_regexes'] = {}
 
 
 @app.route('/')
@@ -155,6 +160,7 @@ def upload_file():
             # Reset session state for a new file upload
             session['df_main'] = None
             session['df_metadata'] = None
+            session['df_meta_thd'] = None
             session['df_sample'] = None
             session['df_history'] = []
             session['imputed_mask'] = None
@@ -180,10 +186,21 @@ def upload_file():
                 if df is None or df.empty:
                     flash('Failed to load data or the file is empty.', 'warning')
                     return redirect(request.url)
-                
                 # Handle orientation
                 if orientation == 'rows':
-                    df = df.T
+                    # This option indicates the file has samples in rows and features in columns.
+                    # The data needs to be transposed to match the app's internal format
+                    # (samples in columns). A simple `df.T` can fail if the first column
+                    # (containing sample names) is not treated as the index.
+                    # The approach for transposition is to set the first column
+                    # as the index and then transpose.
+                    if df.shape[1] > 1:
+                        df = df.set_index(df.columns[0]).T
+                        df.index.name = None
+                    else:
+                        # If only one column, a simple transpose is sufficient.
+                        df = df.T
+                print(df.head())
                 
                 # Ensure column names are strings to avoid type mismatches later
                 df.columns = df.columns.map(str)
@@ -237,25 +254,7 @@ def summary():
         return redirect(url_for('upload_file'))
     
     df = session['df_main']
-    """
-    # Generate summary statistics
-    general_stats = preprocessing_general_dataset_statistics(df)
     
-    summary_stats = preprocessing_summary_perVariable(df)
-    
-    # Create plots
-    plots = {}
-    
-    # Data types distribution
-    type_counts = summary_stats['type'].value_counts()
-    plots['data_types'] = create_bar_plot(
-        x=type_counts.index.tolist(),
-        y=type_counts.values.tolist(),
-        title='Data Types Distribution',
-        xaxis_title='Data Type',
-        yaxis_title='Count'
-    )
-    """
     plots = {}
     # Correlation matrix (if we have sample data)
     if session.get('df_history') and not session['df_history'][-1].empty:
@@ -292,6 +291,12 @@ def summary():
                 group_vector=session.get('group_vector'),
                 group_names=session.get('group_names')
             )
+            mean_values= mean_values.dropna()
+            if not mean_values.empty:
+                plots['mean_intensity_distribution'] = create_distribution_plot(
+                    mean_values,
+                    'Mean Intensity Distribution'
+                )
 
         # Boxplot with all points
         numeric_df_for_boxplot = df_sample.select_dtypes(include=[np.number])
@@ -487,11 +492,12 @@ def metadata():
         # Create group vector for sample columns only
         group_vector = {}
         for col in sample_cols:
-            if col in group_assignments and group_assignments[col]:
+            str_col = str(col) # Ensure key is a string
+            if str_col in group_assignments and group_assignments[str_col]:
                 # Column belongs to multiple groups
                 group_info = {
-                    'groups': group_assignments[col],
-                    'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[col]]
+                    'groups': group_assignments[str_col],
+                    'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[str_col]]
                 }
             else:
                 # Column doesn't belong to any group
@@ -499,7 +505,7 @@ def metadata():
                     'groups': [],
                     'group_names': []
                 }
-            group_vector[col] = group_info
+            group_vector[str_col] = group_info
         
         session['group_vector'] = group_vector
         
@@ -517,7 +523,8 @@ def metadata():
     return render_template('metadata.html', 
                          columns=df.columns.tolist(),
                          existing_metadata=existing_metadata,
-                         existing_sample=existing_sample)
+                         existing_sample=existing_sample,
+                         group_regexes=session.get('group_regexes', {}))
 
 @app.route('/groups')
 def view_groups():
@@ -576,45 +583,119 @@ def view_groups():
                          group_names=group_names,
                          n_groups=n_groups,
                          group_summary=group_summary,
-                         processing_steps=session.get('processing_steps', []))
+                         processing_steps=session.get('processing_steps', []),
+                         group_regexes=session.get('group_regexes', {}))
 
 @app.route('/update_groups', methods=['POST'])
 def update_groups():
     """Update group assignments without resetting data processing."""
     df_sample = session.get('df_sample')
     if df_sample is None or df_sample.empty:
-        return jsonify({'success': False, 'message': 'No sample data found.'})
+        logging.error("apply_regex_grouping: No sample data found in session.")
+        return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
 
     data = request.json
     group_assignments = data.get('groupAssignments', {})
     group_names = data.get('groupNames', {})
     n_groups = data.get('nGroups', 0)
+    group_regexes = data.get('groupRegexes', {})
 
     # Update group information in session
     session['group_assignments'] = group_assignments
     session['group_names'] = group_names
     session['n_groups'] = n_groups
+    session['group_regexes'] = group_regexes
 
     # Recreate group vector
     sample_cols = session['df_sample'].columns.tolist()
     group_vector = {}
     for col in sample_cols:
-        if col in group_assignments and group_assignments[col]:
+        str_col = str(col) # Ensure key is a string
+        if str_col in group_assignments and group_assignments[str_col]:
             group_info = {
-                'groups': group_assignments[col],
-                'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[col]]
+                'groups': group_assignments[str_col],
+                'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[str_col]]
             }
         else:
             group_info = {
                 'groups': [],
                 'group_names': []
             }
-        group_vector[col] = group_info
+        group_vector[str_col] = group_info
     
     session['group_vector'] = group_vector
     session.modified = True
 
     return jsonify({'success': True, 'message': 'Group assignments updated successfully.'})
+
+@app.route('/apply_regex_grouping', methods=['POST'])
+def apply_regex_grouping():
+    df_sample = session.get('df_sample')
+    if df_sample is None or df_sample.empty:
+        # logging.error("apply_regex_grouping: No sample data found in session.")
+        return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
+
+    data = request.json
+    group_id = str(data.get('groupId'))
+    regex_pattern = data.get('regexPattern')
+    # logging.debug(f"apply_regex_grouping: Received groupId={group_id}, regexPattern='{regex_pattern}'")
+
+    if not regex_pattern:
+        # logging.warning("apply_regex_grouping: Regex pattern is empty.")
+        return jsonify({'success': False, 'message': 'Regex pattern cannot be empty.'})
+
+    try:
+        import re
+        compiled_regex = re.compile(regex_pattern)
+    except re.error as e:
+        # logging.error(f"apply_regex_grouping: Invalid regex pattern '{regex_pattern}': {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Invalid regex pattern: {e}'})
+    except Exception as e:
+        # logging.error(f"apply_regex_grouping: Unexpected error during regex compilation: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'An unexpected error occurred during regex compilation: {e}'})
+
+    df_sample_columns = session['df_sample'].columns.tolist()
+    group_assignments = session.get('group_assignments', {})
+    group_names = session.get('group_names', {})
+
+    matched_columns_count = 0
+    try:
+        for col in df_sample_columns:
+            if compiled_regex.match(col):
+                # Ensure the group_id is added as an integer
+                current_groups = group_assignments.get(col, [])
+                if int(group_id) not in current_groups:
+                    current_groups.append(int(group_id))
+                    group_assignments[col] = sorted(current_groups) # Keep sorted for consistency
+                    matched_columns_count += 1
+
+        session['group_assignments'] = group_assignments
+        session['group_regexes'][group_id] = regex_pattern # Store the regex
+
+        # Recreate group vector based on updated group_assignments
+        group_vector = {}
+        for col in df_sample_columns:
+            if col in group_assignments and group_assignments[col]:
+                group_info = {
+                    'groups': group_assignments[col],
+                    'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[col]]
+                }
+            else:
+                group_info = {
+                    'groups': [],
+                    'group_names': []
+                }
+            group_vector[col] = group_info
+        
+        session['group_vector'] = group_vector
+        session.modified = True
+
+        # logging.info(f"apply_regex_grouping: Successfully assigned {matched_columns_count} columns to group {group_names.get(group_id, group_id)}.")
+        return jsonify({'success': True, 'message': f'Successfully assigned {matched_columns_count} columns to group {group_names.get(group_id, group_id)}.', 'groupAssignments': group_assignments, 'groupVector': group_vector})
+
+    except Exception as e:
+        # logging.error(f"apply_regex_grouping: Error during column assignment or session update: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'An error occurred during column assignment: {e}'})
 
 @app.route('/imputation')
 def imputation():
@@ -651,12 +732,20 @@ def threshold():
     threshold_percent = float(request.json.get('threshold', 80))
     
     df_sample = session['df_history'][-1]
+    df_metadata = session.get('df_metadata')
     
     # Apply thresholding
     num_columns = len(df_sample.columns)
     threshold_count = max(1, int((threshold_percent / 100.0) * num_columns)) if num_columns > 0 else 0
     
     df_thresholded = df_sample.dropna(thresh=threshold_count)
+    
+    # Cut metadata if it exists
+    if df_metadata is not None and not df_metadata.empty:
+        df_meta_thd = df_metadata.loc[df_thresholded.index]
+        session['df_meta_thd'] = df_meta_thd
+    else:
+        session['df_meta_thd'] = None
     
     # Store result
     session['df_history'].append(df_thresholded)
@@ -737,7 +826,7 @@ def apply_imputation():
         session['imputed_mask'] = imputed_mask
 
         # Update processing steps
-        session['processing_steps'].append({'icon': 'fa-magic', 'color': 'text-primary', 'message': f'Applied {method} imputation. New shape: {imputed_df.shape[0]} rows, {imputed_df.shape[1]} columns.'})
+        session['processing_steps'].append({'icon': 'fa-magic', 'color': 'text-primary', 'message': f'Applied {method} imputation.'})
         session.modified = True # Mark session as modified
         session['imputation_performed'] = True # Set flag that imputation has occurred
         
@@ -758,7 +847,7 @@ def apply_imputation():
         })
         
     except Exception as e:
-        logging.error(f"Imputation failed for method {method}: {e}", exc_info=True)
+        # logging.error(f"Imputation failed for method {method}: {e}", exc_info=True)
         return jsonify({'error': f'Imputation failed: {str(e)}'})
 
 @app.route('/replace_zeros', methods=['POST'])
@@ -929,7 +1018,7 @@ def apply_transformation():
             'plots': plots
         })
     except Exception as e:
-        logging.error(f"Transformation failed for method {method}: {e}", exc_info=True)
+        # logging.error(f"Transformation failed for method {method}: {e}", exc_info=True)
         return jsonify({'error': f'Transformation failed: {str(e)}'})
 
 @app.route('/scaling')
@@ -985,7 +1074,6 @@ def apply_scaling():
             'color': 'text-warning',
             'message': f'Applied {method.replace("_", " ").title()} scaling.'
         })
-        session.modified = True
 
         df_before_scaling = session['df_history'][0]
         plot_type = request.json.get('plot_type', 'boxplot')
@@ -999,7 +1087,7 @@ def apply_scaling():
             'plots': plots
         })
     except Exception as e:
-        logging.error(f"Scaling failed for method {method}: {e}", exc_info=True)
+        # logging.error(f"Scaling failed for method {method}: {e}", exc_info=True)
         return jsonify({'error': f'Scaling failed: {str(e)}'})
 
 @app.route('/get_distribution_plot/<plot_type>/<context>', methods=['GET'])
@@ -1039,14 +1127,16 @@ def reset():
     # Reset all dataframes to original state
     session['df_main'] = session['df_original']
     session['df_metadata'] = None
+    session['df_meta_thd'] = None
     session['df_sample'] = None
     session['df_history'] = []
     session['imputed_mask'] = None
     session['current_column'] = ''
     session['processing_steps'] = [] # Clear processing steps
     session['imputation_performed'] = False # Reset imputation flag
-    # Reset group-related session variables
-    session['group_assignments'] = {}
+    session['differential_analysis_results'] = None
+    session['latest_differential_analysis_method'] = None
+    session['group_assignments'] = {} # Reset group-related session variables
     session['group_names'] = {}
     session['n_groups'] = 0
     session['group_vector'] = {}
@@ -1261,6 +1351,68 @@ def get_comparison_data(history_index):
         'processed_shape': df_processed.shape
     })
 
+@app.route('/export_dataframe/<string:format>/<string:context>')
+def export_dataframe(format, context):
+    df = None
+    # Define contexts that should include metadata
+    contexts_with_metadata = ['analysis', 'comparison_original', 'comparison_processed']
+
+    if context == 'main':
+        df = session.get('df_main')
+    elif context == 'analysis':
+        if session.get('df_history'):
+            df = session['df_history'][-1]
+    elif context == 'differential_analysis_results':
+        df = session.get('differential_analysis_results')
+    elif context == 'comparison_original':
+        df = session.get('df_sample')
+    elif context == 'comparison_processed':
+        if session.get('df_history'):
+            df = session['df_history'][-1]
+    else:
+        return "Invalid context", 400
+
+    if df is None:
+        return "No data available to export", 404
+
+    # Use a copy to avoid modifying the session data
+    df = df.copy()
+
+    # Append metadata if the context requires it
+    if context in contexts_with_metadata:
+        metadata_df = None
+        if session.get('df_meta_thd') is not None and not session.get('df_meta_thd').empty:
+            metadata_df = session.get('df_meta_thd')
+        elif session.get('df_metadata') is not None and not session.get('df_metadata').empty:
+            metadata_df = session.get('df_metadata')
+
+        if metadata_df is not None and not metadata_df.empty:
+            # The dataframes (df and metadata_df) share the same index (features).
+            # We can concatenate them horizontally.
+            df = pd.concat([metadata_df, df], axis=1)
+
+    output = io.BytesIO()
+    if format == 'csv':
+        df.to_csv(output, index=True)
+        mimetype = 'text/csv'
+        filename = f'{context}_data.csv'
+    elif format == 'tsv':
+        df.to_csv(output, sep='\t', index=True)
+        mimetype = 'text/tab-separated-values'
+        filename = f'{context}_data.tsv'
+    elif format == 'excel':
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=True)
+        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        filename = f'{context}_data.xlsx'
+    else:
+        return "Invalid format", 400
+
+    output.seek(0)
+
+    return send_file(output, as_attachment=True, download_name=filename, mimetype=mimetype)
+
+
 @app.route('/distribution/<column_name>')
 def distribution(column_name):
     if not session.get('df_history'):
@@ -1292,15 +1444,15 @@ def differential_analysis():
     
     # Check for existing results in session
     results_html = None
-    if not session['differential_analysis_results'].empty:
+    if session.get('differential_analysis_results') is not None and not session['differential_analysis_results'].empty:
         results_df = session['differential_analysis_results']
-        results_html = results_df.to_html(classes='table table-striped table-sm', table_id='resultsTable')
-        print(results_df.head(10))
+        results_html = results_df.to_html(classes='table table-striped table-sm', table_id='resultsTable', escape=False)
     
     return render_template('differential_analysis.html',
                            group_names=group_names,
                            group_vector=group_vector,
-                           results_html=results_html)
+                           results_html=results_html,
+                           latest_differential_analysis_method=session.get('latest_differential_analysis_method'))
 
 
 @app.route('/run_differential_analysis', methods=['POST'])
@@ -1316,6 +1468,7 @@ def run_differential_analysis():
     formula = data.get('formula')
 
     df = session['df_history'][-1]
+    df.columns = df.columns.map(str) # Ensure df columns are strings
     group_vector = session['group_vector']
     results_df = pd.DataFrame()
 
@@ -1371,11 +1524,12 @@ def run_differential_analysis():
             results_df['rejected'] = rejected
 
         session['differential_analysis_results'] = results_df
-        print(results_df.head(10))
+        session['latest_differential_analysis_method'] = test_type.replace("_", " ").title()
+        # print(results_df.head(10))
         return jsonify({'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False)})
 
     except Exception as e:
-        logging.error(f"Differential analysis failed: {e}", exc_info=True)
+        # logging.error(f"Differential analysis failed: {e}", exc_info=True)
         return jsonify({'error': f'An error occurred during analysis: {str(e)}'})
 
 @app.route('/run_permanova', methods=['POST'])
@@ -1399,25 +1553,184 @@ def run_permanova_route():
         session['permanova_results'] = result_summary
         return jsonify({'success': True, 'result': result_summary})
     except Exception as e:
-        logging.error(f"PERMANOVA analysis failed: {e}", exc_info=True)
+        # logging.error(f"PERMANOVA analysis failed: {e}", exc_info=True)
         return jsonify({'error': f'PERMANOVA failed: {str(e)}'})
 
 @app.route('/result_visualization')
 def result_visualization():
-    if session['differential_analysis_results'].empty:
+    if 'differential_analysis_results' not in session or session['differential_analysis_results'] is None or session['differential_analysis_results'].empty:
         flash('Please run a differential analysis first.', 'warning')
         return redirect(url_for('differential_analysis'))
 
     results_df = session['differential_analysis_results']
-    data_df = session['df_history'][-1]
-
-    volcano_plot = create_volcano_plot(results_df)
-    clustergram_plot =create_clustergram(data_df, results_df, group_vector=session.get('group_vector'), group_names=session.get('group_names'), distance_metric='euclidean', linkage_method='average')
+    metadata_df = None
+    if session.get('df_meta_thd') is not None and not session.get('df_meta_thd').empty:
+        metadata_df = session.get('df_meta_thd')
+    elif session.get('df_metadata') is not None and not session.get('df_metadata').empty:
+        metadata_df = session.get('df_metadata')
+    
+    volcano_plot_json = create_volcano_plot(
+        results_df=results_df,
+        metadata_df=metadata_df
+    )
+    
+    # Get metadata columns for clustergram y-axis selection
+    metadata_columns = []
+    if metadata_df is not None:
+        metadata_columns = metadata_df.columns.tolist()
 
     return render_template('result_visualization.html', 
-                           volcano_plot=volcano_plot, 
-                           clustergram_plot=clustergram_plot)
+                           volcano_plot_json=volcano_plot_json,
+                           metadata_columns=metadata_columns)
 
+@app.route('/api/clustergram_data', methods=['POST'])
+def clustergram_data():
+    if 'differential_analysis_results' not in session or session['differential_analysis_results'].empty:
+        return jsonify({'error': 'No analysis results found'}), 404
+
+    data = request.json
+    top_n = int(data.get('top_n', 50))
+    distance_metric = data.get('distance_metric', 'euclidean')
+    linkage_method = data.get('linkage_method', 'average')
+    y_axis_label = data.get('y_axis_label') # New: get selected y-axis label
+
+    results_df = session['differential_analysis_results']
+    data_df = session['df_history'][-1]
+
+    p_value_col = 'p_adj' if 'p_adj' in results_df.columns else 'p_value'
+    if 'rejected' in results_df.columns:
+        significant_features_df = results_df[results_df['rejected']]
+    else:
+        significant_features_df = results_df[results_df[p_value_col] < 0.05]
+
+    if significant_features_df.empty:
+        return jsonify({'error': 'No significant features found to generate a clustergram. Adjust p-value threshold or check analysis results.'}), 404
+
+    significant_features = significant_features_df.nsmallest(top_n, p_value_col).index.unique()
+    plot_data = data_df.loc[significant_features]
+    numeric_plot_data = plot_data.select_dtypes(include=[np.number])
+    
+    plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=0).fillna(0)
+
+    # row_linkage is for features (rows)
+    if plot_data_zscored.empty:
+        return jsonify({'error': 'No data for clustergram after z-scoring. This might happen if all significant features have zero variance.'}), 404
+    row_linkage = linkage(plot_data_zscored.values, method=linkage_method, metric=distance_metric)
+    # col_linkage is for samples (columns)
+    col_linkage = linkage(plot_data_zscored.T.values, method=linkage_method, metric=distance_metric)
+    
+    row_dendro = dendrogram(row_linkage, no_plot=True)
+    col_dendro = dendrogram(col_linkage, no_plot=True)
+    
+    # Reorder data using dendrogram leaves
+    plot_data_reordered = plot_data_zscored.iloc[row_dendro['leaves'], col_dendro['leaves']]
+
+    # New: Determine y-axis labels based on user selection
+    y_labels = plot_data_reordered.index.tolist()
+    if y_axis_label and feature_metadata_df is not None and y_axis_label in feature_metadata_df.columns:
+        # Ensure metadata is aligned with the reordered data
+        aligned_metadata = feature_metadata_df.reindex(plot_data_reordered.index)
+        y_labels = aligned_metadata[y_axis_label].tolist()
+
+    n_rows = len(plot_data_reordered.index) # Number of features
+    n_cols = len(plot_data_reordered.columns) # Number of samples
+
+    # Generate positions for heatmap (5, 15, 25, ...)
+    heatmap_x = [5 + 10*i for i in range(n_cols)] # Based on samples
+    heatmap_y = [5 + 10*i for i in range(n_rows)] # Based on features
+
+    # Heatmap Trace
+    max_abs = np.max(np.abs(plot_data_reordered.values))
+    heatmap_trace = {
+        'z': plot_data_reordered.values.tolist(),
+        'x': heatmap_x,
+        'y': heatmap_y,
+        'type': 'heatmap',
+        'colorscale': 'RdBu',
+        'zmin': -max_abs,
+        'zmax': max_abs,
+        'colorbar': {'title': 'Z-score'},
+        'hoverinfo': 'x+y+z',
+    }
+
+    # Prepare customdata for hover (combining sample group and feature metadata)
+    full_custom_data = []
+    metadata_column_names = ['Group'] # Start with 'Group' for sample metadata
+
+    # Get feature-level metadata (rt, mz, intensity)
+    feature_metadata_df = None
+    if session.get('df_meta_thd') is not None:
+        feature_metadata_df = session.get('df_meta_thd')
+    elif session.get('df_metadata') is not None:
+        feature_metadata_df = session.get('df_metadata')
+
+    if feature_metadata_df is not None and not feature_metadata_df.empty:
+        # Ensure feature_metadata_df is aligned with the reordered features (rows of heatmap)
+        feature_metadata_df = feature_metadata_df.reindex(plot_data_reordered.index)
+        metadata_column_names.extend(feature_metadata_df.columns.tolist())
+
+    group_vector = session.get('group_vector', {})
+    group_names_map = session.get('group_names', {})
+
+    for row_label in plot_data_reordered.index: # Iterate through features (rows)
+        row_custom_data = []
+        for col_label in plot_data_reordered.columns: # Iterate through samples (columns)
+            cell_custom_data = []
+
+            # Add sample group info
+            group_info = group_vector.get(col_label, {})
+            groups_assigned = group_info.get('groups', [])
+            if groups_assigned:
+                display_names = [group_names_map.get(str(gid), f'Group {gid}') for gid in groups_assigned]
+                cell_custom_data.append(', '.join(display_names))
+            else:
+                cell_custom_data.append('None')
+
+            # Add feature metadata (rt, mz, intensity)
+            if feature_metadata_df is not None and not feature_metadata_df.empty:
+                feature_meta_values = feature_metadata_df.loc[row_label].values.tolist()
+                cell_custom_data.extend(feature_meta_values)
+            
+            row_custom_data.append(cell_custom_data)
+        full_custom_data.append(row_custom_data)
+
+    # Column Dendrogram Traces (for samples)
+    col_dendro_traces = []
+    for i in range(len(col_dendro['icoord'])):
+        xs = col_dendro['icoord'][i]
+        ys = col_dendro['dcoord'][i]
+        col_dendro_traces.append({
+            'x': xs,
+            'y': ys,
+            'mode': 'lines',
+            'line': {'color': 'rgb(255,133,27)', 'width': 1},
+            'hoverinfo': 'none',
+        })
+
+    # Row Dendrogram Traces (for features)
+    row_dendro_traces = []
+    for i in range(len(row_dendro['icoord'])):
+        xs = row_dendro['dcoord'][i]
+        ys = row_dendro['icoord'][i]
+        row_dendro_traces.append({
+            'x': xs,
+            'y': ys,
+            'mode': 'lines',
+            'line': {'color': 'rgb(255,133,27)', 'width': 1},
+            'hoverinfo': 'none',
+        })
+
+    return jsonify({
+        'heatmap': heatmap_trace,
+        'col_dendro': col_dendro_traces,
+        'row_dendro': row_dendro_traces,
+        'column_labels': plot_data_reordered.columns.tolist(), # Samples
+        'row_labels': y_labels, # Use the potentially updated labels
+        'heatmap_x': heatmap_x,
+        'heatmap_y': heatmap_y,
+        'heatmap_customdata': full_custom_data,
+        'metadata_column_names': metadata_column_names
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)

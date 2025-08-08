@@ -45,6 +45,16 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Original Data</h5>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-download me-2"></i>Export Data
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='comparison_original') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='comparison_original') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='comparison_original') }}">Export as Excel</a></li>
+                        </ul>
+                    </div>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">Shape: <span id="originalShape">{{ original_shape[0] }} rows, {{ original_shape[1] }} columns</span></p>
@@ -66,6 +76,16 @@
                                 <option value="{{ index }}" {% if index == selected_history_index %}selected{% endif %}>Step {{ index }}: {{ message }}</option>
                             {% endfor %}
                         </select>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-download me-2"></i>Export Data
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='comparison_processed') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='comparison_processed') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='comparison_processed') }}">Export as Excel</a></li>
+                        </ul>
                     </div>
                 </div>
                 <div class="card-body">

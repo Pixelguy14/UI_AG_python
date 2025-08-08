@@ -137,13 +137,39 @@
                     <div id="permanovaResults"></div>
                 </div>
             </div>
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-ruler-combined me-2"></i>Latest Differential Analysis Applied</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-0">
+                        {% if latest_differential_analysis_method %}
+                            <strong>Method:</strong> {{ latest_differential_analysis_method }}
+                        {% else %}
+                            No Differential analysis has been applied yet (excluding PERMANOVA).
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
     <!-- Results Table -->
     <div class="row mt-4">
         <div class="col-12">
             <div class="card">
-                <div class="card-header"><h5 class="m-0">Analysis Results</h5></div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="m-0">Analysis Results</h5>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-download me-2"></i>Export Data
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='differential_analysis_results') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='differential_analysis_results') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='differential_analysis_results') }}">Export as Excel</a></li>
+                        </ul>
+                    </div>
+                </div>
                 <div class="card-body">
                     <div id="resultsContainer" class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
                         {% if results_html %}
@@ -230,8 +256,8 @@ $(document).ready(function() {
         if (payload.test_type === 'paired_ttest') {
             payload.paired_map = [];
             $('.paired-selector').each(function() {
-                const s1 = $(this).data('sample1');
-                const s2 = $(this).val();
+                const s1 = String($(this).data('sample1')); // Ensure sample1 is a string
+                const s2 = String($(this).val()); // Ensure selected value is a string
                 if (s1 && s2) {
                     payload.paired_map.push([s1, s2]);
                 }
@@ -279,8 +305,7 @@ $(document).ready(function() {
             }
         });
     });
-
-    // PERMANOVA button click
+    
     $('#runPermanovaBtn').on('click', function() {
         const btn = $(this);
         const progress = $('#permanovaProgress');
@@ -326,6 +351,14 @@ $(document).ready(function() {
             }
         });
     });
+
+    // Fix for ANOVA results not rendering correctly on page reload
+    const resultsContainer = document.getElementById('resultsContainer');
+    if (resultsContainer && resultsContainer.textContent.trim().startsWith('<ul class=\'list-unstyled mb-0\'>')) {
+        // If the content is raw HTML (due to server-side escaping), re-render it as HTML
+        resultsContainer.innerHTML = resultsContainer.textContent;
+    }
 });
+
 </script>
 {% endblock %}
