@@ -50,9 +50,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='comparison_original') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='comparison_original') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='comparison_original') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='comparison_original') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='comparison_original') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='comparison_original') }}">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -82,9 +82,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='comparison_processed') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='comparison_processed') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='comparison_processed') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='comparison_processed') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='comparison_processed') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='comparison_processed') }}">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -127,9 +127,18 @@
     }
 
     function loadComparisonData() {
-        const historyIndex = $('#historySelector').val();
+        let historyIndex = $('#historySelector').val();
+        
+        historyIndex = parseInt(historyIndex);
+        if (isNaN(historyIndex)) {
+            alert('Please select a valid processing step.');
+            return;
+        }
+
+        const actualHistoryIndex = historyIndex - 1; // Adjust for 0-based indexing in Python
+
         $.ajax({
-            url: `/get_comparison_data/${historyIndex-1}`,
+            url: '{{ url_for("api.get_comparison_data", history_index=0) }}'.replace('/0', '/' + actualHistoryIndex),
             method: 'GET',
             success: function(response) {
                 $('#processedTableContainer').html(response.processed_html);

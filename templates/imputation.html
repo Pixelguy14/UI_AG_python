@@ -113,6 +113,14 @@
                     <div id="missingHeatmapPlot"></div>
                 </div>
             </div>
+            <!-- Intensity Distribution Comparison -->
+            <div class="card">
+                <div class="card-header">Intensity Distribution Comparison</div>
+                <div class="card-body">
+                    <div id="intensityComparisonPlot"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -202,7 +210,7 @@
         btn.prop('disabled', true);
 
         $.ajax({
-            url: '{{ url_for("threshold") }}',
+            url: '{{ url_for("processing.threshold") }}',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({threshold: parseFloat(threshold)}),
@@ -219,6 +227,16 @@
                             Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
                         } catch (e) {
                             console.error('Error rendering missing heatmap plot after thresholding:', e);
+                        }
+                    }
+
+                    // Update intensity comparison plot
+                    if (response.intensity_comparison_plot) {
+                        try {
+                            const intensityPlotData = JSON.parse(response.intensity_comparison_plot);
+                            Plotly.newPlot('intensityComparisonPlot', intensityPlotData.data, intensityPlotData.layout);
+                        } catch (e) {
+                            console.error('Error rendering intensity comparison plot:', e);
                         }
                     }
                 }
@@ -253,7 +271,7 @@
         if (method === 'mice_bayesian' || method === 'mice_linear') params.max_iter = parseInt($('#miceMaxIter').val());
 
         $.ajax({
-            url: '{{ url_for("apply_imputation") }}',
+            url: '{{ url_for("processing.apply_imputation") }}',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({method: method, params: params}),
@@ -273,6 +291,16 @@
                             console.error('Error rendering missing heatmap plot after imputation:', e);
                         }
                     }
+
+                    // Update intensity comparison plot
+                    if (response.intensity_comparison_plot) {
+                        try {
+                            const intensityPlotData = JSON.parse(response.intensity_comparison_plot);
+                            Plotly.newPlot('intensityComparisonPlot', intensityPlotData.data, intensityPlotData.layout);
+                        } catch (e) {
+                            console.error('Error rendering intensity comparison plot:', e);
+                        }
+                    }
                 }
             },
             error: function(xhr, status, error) {
@@ -290,7 +318,7 @@
     function resetData() {
         if (confirm('Are you sure you want to undo the last processing step?')) {
             $.ajax({
-                url: '{{ url_for("reset_sample_step") }}',
+                url: '{{ url_for("processing.reset_sample_step") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({context: 'imputation'}),
@@ -303,6 +331,11 @@
                         if (response.missing_heatmap) {
                             const heatmapData = JSON.parse(response.missing_heatmap);
                             Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout);
+                        }
+                        // Re-render intensity comparison plot after reset
+                        if (response.intensity_comparison_plot) {
+                            const intensityComparisonPlot = JSON.parse(response.intensity_comparison_plot);
+                            Plotly.newPlot('intensityComparisonPlot', intensityComparisonPlot.data, intensityComparisonPlot.layout)
                         }
                     } else {
                         showFlashMessage(response.error, 'danger');
@@ -326,7 +359,7 @@
             btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Replacing...');
 
             $.ajax({
-                url: '{{ url_for("replace_zeros") }}',
+                url: '{{ url_for("processing.replace_zeros") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 success: function(response) {
@@ -337,6 +370,10 @@
                         if (response.missing_heatmap) {
                             const heatmapData = JSON.parse(response.missing_heatmap);
                             Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout);
+                        }
+                        if (response.intensity_comparison_plot) {
+                            const intensityComparisonPlot = JSON.parse(response.intensity_comparison_plot);
+                            Plotly.newPlot('intensityComparisonPlot', intensityComparisonPlot.data, intensityComparisonPlot.layout)
                         }
                     } else {
                         showFlashMessage(response.error, 'danger');
@@ -358,6 +395,14 @@
         try {
             const missingHeatmapData = {{ plots.missing_heatmap|safe }};
             Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
+        } catch (e) {
+            console.error('Error rendering missing heatmap plot:', e);
+        }
+        {% endif %}
+        {% if plots.intensity_comparison_plot %}
+        try {
+            const intensityComparisonPlot = {{ plots.intensity_comparison_plot|safe }};
+            Plotly.newPlot('intensityComparisonPlot', intensityComparisonPlot.data, intensityComparisonPlot.layout);
         } catch (e) {
             console.error('Error rendering missing heatmap plot:', e);
         }

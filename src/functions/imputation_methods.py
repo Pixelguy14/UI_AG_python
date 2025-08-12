@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.impute import KNNImputer # type: ignore[import]
+from sklearn.impute import KNNImputer # type: ignore
 from sklearn.experimental import enable_iterative_imputer  # type: ignore # Has to stay in order for IterativeImputer to work
-from sklearn.impute import IterativeImputer # type: ignore[import]
-from missingpy import MissForest # type: ignore[import]
-from sklearn.preprocessing import StandardScaler # type: ignore[import]
-from sklearn.decomposition import TruncatedSVD # type: ignore[import]
-from sklearn.linear_model import BayesianRidge, LinearRegression # type: ignore[import]
+from sklearn.impute import IterativeImputer # type: ignore
+from missingpy import MissForest # type: ignore
+from sklearn.preprocessing import StandardScaler # type: ignore
+from sklearn.decomposition import TruncatedSVD # type: ignore
+from sklearn.linear_model import BayesianRidge, LinearRegression # type: ignore
 
 ## Univariate methods for numerical columns
 
@@ -111,7 +111,7 @@ def missForestImputed(df, max_iter=10, n_estimators=100, random_state=None):
 
 # Singular Value Decomposition
 def svdImputed(df, n_components=5, max_iter=100, tol=1e-4):
-    df_imputed = df.copy()
+    df_imputed = df.copy().T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
 
     if num_cols.empty:
@@ -151,12 +151,12 @@ def svdImputed(df, n_components=5, max_iter=100, tol=1e-4):
     imputed_final = scaler.inverse_transform(imputed_array_prev)
     df_imputed[num_cols] = pd.DataFrame(imputed_final, columns=num_cols, index=df_num.index)
 
-    return df_imputed
+    return df_imputed.T
 
 # K nearest neighbours
 def knnImputed(df,n_neighbors=2):
     # Only alter numerical columns and columns with nan values
-    df_imputed = df.copy()
+    df_imputed = df.copy().T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
 
     if num_cols.empty:
@@ -167,13 +167,13 @@ def knnImputed(df,n_neighbors=2):
     imputed_array = knn_imputer.fit_transform(df_num)
     df_imputed[num_cols] = pd.DataFrame(imputed_array, columns=num_cols, index=df_num.index)
 
-    return df_imputed
+    return df_imputed.T
 
 # NOT USING QRILC = Quantile Regression Imputation of Left-Censored data
 # MICE with bayesian ridge 
 def miceBayesianRidgeImputed(df, max_iter=20, random_state=None, initial_strategy='mean', tol=1e-3):
     # initial_strategy: 'mean', 'median', 'most_frequent', or 'constant'
-    df_imputed = df.copy()
+    df_imputed = df.copy().T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
     
     if num_cols.empty:
@@ -194,12 +194,12 @@ def miceBayesianRidgeImputed(df, max_iter=20, random_state=None, initial_strateg
     
     df_imputed[num_cols] = pd.DataFrame(imputed_array, columns=num_cols, index=df_num.index)
     
-    return df_imputed
+    return df_imputed.T
 
 # MICE with linear regresion
 def miceLinearRegressionImputed(df, max_iter=20, random_state=None, initial_strategy='mean', tol=1e-3):
     # initial_strategy: 'mean', 'median', 'most_frequent', or 'constant'
-    df_imputed = df.copy()
+    df_imputed = df.copy().T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
     
     if num_cols.empty:
@@ -221,7 +221,7 @@ def miceLinearRegressionImputed(df, max_iter=20, random_state=None, initial_stra
     # Create DataFrame for imputed values
     df_imputed[num_cols] = pd.DataFrame(imputed_array, columns=num_cols, index=df_num.index)
 
-    return df_imputed
+    return df_imputed.T
 
 # Apply biological constraints and rescaling
 def postprocess_imputation(imputed_df, original_df):

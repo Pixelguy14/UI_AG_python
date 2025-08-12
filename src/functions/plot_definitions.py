@@ -4,9 +4,20 @@ import pandas as pd
 import plotly.graph_objs as go # type: ignore
 import plotly.utils # type: ignore
 from sklearn.decomposition import PCA # type: ignore
-import plotly.express as px # type: ignore
 from scipy.cluster.hierarchy import linkage, dendrogram # type: ignore
 from sklearn.cross_decomposition import PLSRegression # type: ignore
+
+# Okabe-Ito color palette for color vision deficiency
+OKABE_ITO_PALETTE = [
+    '#E69F00', # Orange
+    '#56B4E9', # Sky Blue
+    '#009E73', # Greenish Yellow
+    '#F0E442', # Blue (actually a light yellow)
+    '#0072B2', # Vermillion (actually a dark blue)
+    '#D55E00', # Reddish Purple (actually an orange-red)
+    '#CC79A7', # Grey (actually a pinkish purple)
+    '#000000'  # Black
+]
 
 def _create_empty_plot_with_message(title, message="No data available for plotting."):
     fig = go.Figure()
@@ -30,7 +41,7 @@ def create_bar_plot(x, y, title, xaxis_title, yaxis_title, group_vector=None, gr
     if not x or not y:
         return _create_empty_plot_with_message(title)
 
-    colors = px.colors.qualitative.Vivid
+    colors = OKABE_ITO_PALETTE
     group_color_map = {}
     bar_colors = []
 
@@ -208,7 +219,7 @@ def create_boxplot(df, title, group_vector=None, group_names=None):
         return _create_empty_plot_with_message(title)
 
     data = []
-    colors = px.colors.qualitative.Vivid
+    colors = OKABE_ITO_PALETTE
     group_color_map = {}
 
     if group_vector and group_names:
@@ -260,7 +271,7 @@ def create_violinplot(df, title, group_vector=None, group_names=None):
         return _create_empty_plot_with_message(title)
 
     data = []
-    colors = px.colors.qualitative.Vivid
+    colors = OKABE_ITO_PALETTE
     group_color_map = {}
 
     if group_vector and group_names:
@@ -342,7 +353,7 @@ def create_pca_plot(df, title, group_vector=None, group_names=None):
     fig = go.Figure()
 
     if group_vector and group_names:
-        colors = px.colors.qualitative.Vivid
+        colors = OKABE_ITO_PALETTE
         unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
         group_color_map = {gid: colors[i % len(colors)] for i, gid in enumerate(unique_group_ids)}
         
@@ -415,7 +426,7 @@ def create_hca_plot(df, title, group_vector=None, group_names=None, distance_met
         # Create color mapping for groups
         group_color_map = {}
         if group_vector and group_names:
-            colors = px.colors.qualitative.Vivid
+            colors = OKABE_ITO_PALETTE
             unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
             group_color_map = {gid: colors[i % len(colors)] for i, gid in enumerate(unique_group_ids)}
         
@@ -548,7 +559,7 @@ def create_plsda_plot(df, title, group_vector=None, group_names=None):
 
     fig = go.Figure()
 
-    colors = px.colors.qualitative.Vivid
+    colors = OKABE_ITO_PALETTE
     unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
     group_color_map = {gid: colors[i % len(colors)] for i, gid in enumerate(unique_group_ids)}
     
@@ -632,7 +643,7 @@ def create_oplsda_plot(df, title, group_vector=None, group_names=None):
 
     fig = go.Figure()
 
-    colors = px.colors.qualitative.Vivid
+    colors = OKABE_ITO_PALETTE
     unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
     group_color_map = {gid: colors[i % len(colors)] for i, gid in enumerate(unique_group_ids)}
     
@@ -834,6 +845,70 @@ def create_volcano_plot(
         yaxis=dict(range=[0, y_max]),
         height=600,
         margin=dict(l=50, r=50, b=50, t=80)
+    )
+
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+def create_intensity_comparison_plot(original_df, imputed_df, log_transform=False):
+    """
+    Compares intensity distributions of original vs. imputed data using Plotly.
+
+    Args:
+        original_df (pd.DataFrame): Original data (with NaN).
+        imputed_df (pd.DataFrame): Imputed data.
+        method_name (str): Name of the imputation method for the title.
+        log_transform (bool): If True, applies log-transformation to the data.
+
+    Returns:
+        str: JSON-serialized Plotly figure.
+    """
+    if original_df.empty or imputed_df.empty:
+        return _create_empty_plot_with_message(
+            'Intensity Distribution',
+            "Not enough data to compare distributions."
+        )
+
+    # Flatten the data to 1D and handle transformations
+    original_flat = original_df.values.flatten()
+    original_flat = original_flat[~np.isnan(original_flat)]
+    imputed_flat = imputed_df.values.flatten()
+
+    if log_transform:
+        original_flat = np.log1p(original_flat)
+        imputed_flat = np.log1p(imputed_flat)
+        xlabel = 'log(Intensity)'
+    else:
+        xlabel = 'Intensity'
+
+    fig = go.Figure()
+
+    # Add original data histogram
+    fig.add_trace(go.Histogram(
+        x=original_flat.tolist(),
+        name='Before Processing',
+        histnorm='probability density',
+        marker_color='blue',
+        opacity=0.6
+    ))
+
+    # Add imputed data histogram
+    fig.add_trace(go.Histogram(
+        x=imputed_flat.tolist(),
+        name='After Processing',
+        histnorm='probability density',
+        marker_color='red',
+        opacity=0.6
+    ))
+
+    # Update layout for overlay
+    fig.update_layout(
+        barmode='overlay',
+        title='Intensity Distribution Comparison',
+        xaxis_title=xlabel,
+        yaxis_title='Density',
+        template='plotly_white',
+        legend=dict(x=0.7, y=0.98)
     )
 
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)

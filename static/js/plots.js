@@ -6,7 +6,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const topN = document.getElementById('topNFeatures').value;
             const distanceMetric = document.getElementById('distanceMetric').value;
             const linkageMethod = document.getElementById('linkageMethod').value;
-            const yAxisLabel = document.getElementById('yAxisLabel').value;
+            const yAxisLabelSelect = document.getElementById('yAxisLabel');
+            const yAxisLabel = yAxisLabelSelect.value;
+            const yAxisTitle = yAxisLabelSelect.options[yAxisLabelSelect.selectedIndex].text;
+            const colorPalette = document.getElementById('colorPalette').value;
 
             fetch('/api/clustergram_data', {
                 method: 'POST',
@@ -17,7 +20,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     top_n: topN,
                     distance_metric: distanceMetric,
                     linkage_method: linkageMethod,
-                    y_axis_label: yAxisLabel
+                    y_axis_label: yAxisLabel,
+                    color_palette: colorPalette
                 }),
             })
             .then(response => response.json())
@@ -69,6 +73,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const xMax = Math.max(...data.heatmap_x);
                 const yMin = Math.min(...data.heatmap_y);
                 const yMax = Math.max(...data.heatmap_y);
+
+                let displayTickVals = data.heatmap_y;
+                let displayTickText = data.row_labels;
+
+                const maxLabels = 50; // Threshold for sampling
+                if (data.row_labels.length > maxLabels) {
+                    const samplingInterval = Math.ceil(data.row_labels.length / maxLabels);
+                    displayTickVals = [];
+                    displayTickText = [];
+                    for (let i = 0; i < data.row_labels.length; i += samplingInterval) {
+                        displayTickVals.push(data.heatmap_y[i]);
+                        displayTickText.push(data.row_labels[i]);
+                    }
+                }
                 
                 // Create layout
                 const layout = {
@@ -127,9 +145,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     yaxis3: {
                         domain: [0.02, 0.8],
                         range: [yMin, yMax],
-                        tickvals: data.heatmap_y,
-                        ticktext: data.row_labels,
-                        side: 'right'
+                        tickvals: displayTickVals,
+                        ticktext: displayTickText,
+                        side: 'right',
+                        title: {
+                            text: yAxisTitle,
+                            font: { size: 16 }
+                        }
                     }
                 };
 

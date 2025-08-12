@@ -30,9 +30,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='main') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='main') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='main') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='main') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='main') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='main') }}">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -131,7 +131,7 @@
     }
 
     function loadColumnInfo(columnName, plotType) {
-        const url = plotType === 'pie' ? `/column_info/${encodeURIComponent(columnName)}` : `/column_density_plot_main/${encodeURIComponent(columnName)}`;
+        const url = plotType === 'pie' ? `{{ url_for("api.column_info", column_name="") }}${encodeURIComponent(columnName)}` : `{{ url_for("api.column_density_plot_main", column_name="") }}${encodeURIComponent(columnName)}`;
 
         $.get(url)
             .done(function(data) {

@@ -76,7 +76,7 @@ def yeo_johnson_transform(df):
     Apply Yeo-Johnson power transformation.
     This finds an optimal transformation to stabilize variance and handle non-normality.
     It works with positive, zero, and negative values.
-    Requires scikit-learn.
     """
+    df_transformed = df.copy().T
     pt = PowerTransformer(method='yeo-johnson', standardize=False)
-    return pd.DataFrame(pt.fit_transform(df), index=df.index, columns=df.columns)
+    return pd.DataFrame(pt.fit_transform(df_transformed), index=df.index, columns=df.columns).T

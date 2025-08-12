@@ -265,7 +265,7 @@
         };
 
         $.ajax({
-            url: '{{ url_for("update_groups") }}',
+            url: '{{ url_for("analysis.update_groups") }}',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify(data),
@@ -289,7 +289,7 @@
         }
 
         $.ajax({
-            url: '/apply_regex_grouping',
+            url: '{{ url_for("api.apply_regex_grouping") }}',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({
@@ -300,7 +300,6 @@
                 if (response.success) {
                     groupAssignments = response.groupAssignments; // Update local groupAssignments
                     updateAllGroupAssignments(); // Re-render checkboxes
-                    // alert(response.message); // Removed alert for smoother UX
                 } else {
                     alert('Error applying regex: ' + response.message);
                 }

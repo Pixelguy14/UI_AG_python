@@ -164,9 +164,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='csv', context='differential_analysis_results') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='tsv', context='differential_analysis_results') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('export_dataframe', format='excel', context='differential_analysis_results') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='differential_analysis_results') }}">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='differential_analysis_results') }}">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='differential_analysis_results') }}">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -281,7 +281,7 @@ $(document).ready(function() {
         $('#resultsContainer').html('<p class="text-muted">Running analysis...</p>');
 
         $.ajax({
-            url: '{{ url_for("run_differential_analysis") }}',
+            url: '{{ url_for("api.run_differential_analysis") }}',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify(payload),
@@ -323,7 +323,7 @@ $(document).ready(function() {
         resultsDiv.html('');
 
         $.ajax({
-            url: '{{ url_for("run_permanova_route") }}',
+            url: '{{ url_for("api.run_permanova_route") }}',
             method: 'POST',
             contentType: 'application/json', 
             data: JSON.stringify(payload),

@@ -51,7 +51,7 @@
                                     </small>
                                     <small class="text-muted d-block mt-1">
                                         <i class="fas fa-info-circle me-1"></i>
-                                        For automatic grouping, add a regex in parentheses to the group name (e.g., 'Control (C.*)').
+                                        For advanced grouping, such as using regular expressions, please use the dedicated 'Groups' page after saving your assignments here.
                                     </small>
                                 </div>
                             </div>
@@ -166,11 +166,29 @@
         $('.remove-column').click(function() {
             const column = $(this).data('column');
             assignments[column] = 'removed';
-            $(this).closest('tr').addClass('table-danger').find('select, input').prop('disabled', true);
+            const row = $(this).closest('tr');
+
+            // Create a dummy element off-screen to get the computed color from the CSS class
+            const tempElement = $('<div class="table-danger"></div>').css({
+                position: 'absolute',
+                visibility: 'hidden'
+            }).appendTo('body');
+            const dangerColor = tempElement.css('background-color');
+            tempElement.remove();
+
+            // Apply the color as an inline style with !important to override any conflicting stylesheets
+            row.children('td').each(function() {
+                this.style.setProperty('background-color', dangerColor, 'important');
+            });
+            row.find('select, input').prop('disabled', true);
+
             $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
                 assignments[column] = 'undefined';
-                $(this).closest('tr').removeClass('table-danger').find('select, input').prop('disabled', false);
-                $(this).closest('tr').find('.assignment-select').val('undefined');
+                const restoreRow = $(this).closest('tr');
+                // Remove the inline style to allow normal striping to resume
+                restoreRow.children('td').css('background-color', '');
+                restoreRow.find('select, input').prop('disabled', false);
+                restoreRow.find('.assignment-select').val('undefined');
                 $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
                 // Re-bind remove handler
                 bindRemoveHandler($(this));
@@ -196,14 +214,12 @@
             
             for (let i = 1; i <= nGroups; i++) {
                 const currentName = groupNames[i] || `Group ${i}`;
-                const currentRegex = groupRegexes[i] || '';
-                const inputValue = currentRegex ? `${currentName} (${currentRegex})` : currentName;
                 const col = $(`
                     <div class="col-md-6">
-                        <label for="group${i}Name" class="form-label">Group ${i} Name (and optional Regex):</label>
+                        <label for="group${i}Name" class="form-label">Group ${i} Name:</label>
                         <input type="text" class="form-control group-name-input" id="group${i}Name" 
-                               data-group="${i}" placeholder="e.g., Control (C.*)"
-                               value="${inputValue}"
+                               data-group="${i}" placeholder="e.g., Control"
+                               value="${currentName}"
                                onchange="handleGroupInputChanged(${i})">
                     </div>
                 `);
@@ -221,22 +237,8 @@
     }
     
     function handleGroupInputChanged(groupIndex) {
-        const fullInput = $(`#group${groupIndex}Name`).val().trim();
-        const openParenIndex = fullInput.indexOf('(');
-        const closeParenIndex = fullInput.lastIndexOf(')');
-        
-        let name = fullInput;
-        let regexPattern = '';
-
-        if (openParenIndex !== -1 && closeParenIndex !== -1 && closeParenIndex > openParenIndex) {
-            name = fullInput.substring(0, openParenIndex).trim();
-            regexPattern = fullInput.substring(openParenIndex + 1, closeParenIndex).trim();
-        }
-
+        const name = $(`#group${groupIndex}Name`).val().trim();
         updateGroupName(groupIndex, name);
-        if (regexPattern) { // Only call if regexPattern is not empty
-            applyRegexToGroup(groupIndex, regexPattern);
-        }
     }
 
     function updateGroupName(groupIndex, name) {
@@ -320,11 +322,29 @@
         button.off('click').click(function() {
             const column = $(this).data('column');
             assignments[column] = 'removed';
-            $(this).closest('tr').addClass('table-danger').find('select, input').prop('disabled', true);
+            const row = $(this).closest('tr');
+
+            // Create a dummy element off-screen to get the computed color from the CSS class
+            const tempElement = $('<div class="table-danger"></div>').css({
+                position: 'absolute',
+                visibility: 'hidden'
+            }).appendTo('body');
+            const dangerColor = tempElement.css('background-color');
+            tempElement.remove();
+
+            // Apply the color as an inline style with !important to override any conflicting stylesheets
+            row.children('td').each(function() {
+                this.style.setProperty('background-color', dangerColor, 'important');
+            });
+            row.find('select, input').prop('disabled', true);
+
             $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
                 assignments[column] = 'undefined';
-                $(this).closest('tr').removeClass('table-danger').find('select, input').prop('disabled', false);
-                $(this).closest('tr').find('.assignment-select').val('undefined');
+                const restoreRow = $(this).closest('tr');
+                // Remove the inline style to allow normal striping to resume
+                restoreRow.children('td').css('background-color', '');
+                restoreRow.find('select, input').prop('disabled', false);
+                restoreRow.find('.assignment-select').val('undefined');
                 $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
                 bindRemoveHandler($(this));
                 updateGroupSelect(column);
@@ -335,7 +355,8 @@
     function resetAssignments() {
         if (confirm('Are you sure you want to reset all assignments?')) {
             $('.assignment-select').val('undefined').prop('disabled', false);
-            $('tr').removeClass('table-danger');
+            // Remove any inline styles from all table cells to restore striping
+            $('tr').children('td').css('background-color', '');
             $('.remove-column').html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
             
             // Reset assignments objects
@@ -391,34 +412,6 @@
             },
             error: function() {
                 alert('Error saving assignments. Please try again.');
-            }
-        });
-    }
-
-    function applyRegexToGroup(groupId, regexPattern) {
-        if (!regexPattern) {
-            return; // Do nothing if regex is empty
-        }
-
-        $.ajax({
-            url: '/apply_regex_grouping',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({
-                groupId: groupId,
-                regexPattern: regexPattern
-            }),
-            success: function(response) {
-                if (response.success) {
-                    groupAssignments = response.groupAssignments; // Update local groupAssignments
-                    updateAllGroupAssignments(); // Re-render checkboxes
-                    // alert(response.message); // Removed alert for smoother UX
-                } else {
-                    alert('Error applying regex: ' + response.message);
-                }
-            },
-            error: function() {
-                alert('An error occurred while applying regex.');
             }
         });
     }

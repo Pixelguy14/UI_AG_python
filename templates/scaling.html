@@ -229,7 +229,7 @@
         }
 
         $.ajax({
-            url: '{{ url_for("apply_scaling") }}',
+            url: '{{ url_for("processing.apply_scaling") }}',
             method: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({method: method, plot_type: plotType, params: params}),
@@ -257,7 +257,7 @@
     function resetData() {
         if (confirm('Are you sure you want to undo the last processing step?')) {
             $.ajax({
-                url: '{{ url_for("reset_sample_step") }}',
+                url: '{{ url_for("processing.reset_sample_step") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({context: 'scaling'}),
@@ -318,7 +318,7 @@
     function updatePlot(plotType, context) {
         const plotDivId = context === 'before' ? 'distributionPlotBefore' : 'distributionPlotAfter';
         const plotDiv = document.getElementById(plotDivId);
-        const url = `/get_distribution_plot/${plotType}/${context}`;
+        const url = `{{ url_for("api.get_distribution_plot", plot_type="", context="") }}${plotType}/${context}`;
 
         $.get(url)
             .done(function(data) {

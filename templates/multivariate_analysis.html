@@ -106,9 +106,20 @@
 <script src="{{ url_for('static', filename='js/export.js') }}"></script>
 <script>
 function loadPlots() {
-    const index1 = $('#plotSelector1').val();
-    const index2 = $('#plotSelector2').val();
+    let index1 = $('#plotSelector1').val();
+    let index2 = $('#plotSelector2').val();
     const plotType = $('#plotType').val();
+
+    // Parse as integers and handle NaN
+    index1 = parseInt(index1);
+    index2 = parseInt(index2);
+
+    if (isNaN(index1) || isNaN(index2)) {
+        // Handle case where no valid option is selected (e.g., df_history is empty)
+        $('#plotContainer1').html('<div class="alert alert-warning">Please select valid processing steps for comparison.</div>');
+        $('#plotContainer2').html('<div class="alert alert-warning">Please select valid processing steps for comparison.</div>');
+        return;
+    }
 
     $('#plotTitle1').text($('#plotSelector1 option:selected').text() + ' - ' + plotType.toUpperCase());
     $('#plotTitle2').text($('#plotSelector2 option:selected').text() + ' - ' + plotType.toUpperCase());
@@ -120,9 +131,10 @@ function loadPlots() {
 
 function fetchAndRenderPlot(historyIndex, containerId, plotType) {
     let url;
-    if (plotType === 'pca') url = `/get_pca_plot/${historyIndex}`;
-    else if (plotType === 'plsda') url = `/get_plsda_plot/${historyIndex}`;
-    else if (plotType === 'oplsda') url = `/get_oplsda_plot/${historyIndex}`;
+    // Use the .replace('/0', '/' + actualHistoryIndex) pattern
+    if (plotType === 'pca') url = `{{ url_for("api.get_pca_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
+    else if (plotType === 'plsda') url = `{{ url_for("api.get_plsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
+    else if (plotType === 'oplsda') url = `{{ url_for("api.get_oplsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
 
     $.ajax({
         url: url,
@@ -146,7 +158,7 @@ function fetchAndRenderHca() {
     };
 
     $.ajax({
-        url: '/get_hca_plot/',
+        url: '{{ url_for("api.get_hca_plot") }}',
         method: 'POST',
         contentType: 'application/json',
         data: JSON.stringify(payload),

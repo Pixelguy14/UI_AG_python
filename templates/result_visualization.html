@@ -30,11 +30,11 @@
                 </div>
                 <div class="card-body">
                     <div class="row align-items-end">
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label for="topNFeatures" class="form-label"><b>Top N Features:</b></label>
-                            <input type="number" id="topNFeatures" class="form-control" value="50" min="1">
+                            <input type="number" id="topNFeatures" class="form-control" value="50" min="2" max="{{ max_features }}">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label for="distanceMetric" class="form-label"><b>Distance Metric:</b></label>
                             <select id="distanceMetric" class="form-select">
                                 <option value="euclidean">Euclidean</option>
@@ -45,7 +45,7 @@
                                 <option value="chebyshev">Chebyshev</option>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label for="linkageMethod" class="form-label"><b>Linkage Method:</b></label>
                             <select id="linkageMethod" class="form-select">
                                 <option value="average">Average</option>
@@ -54,7 +54,18 @@
                                 <option value="ward">Ward</option>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                    </div>
+                    <div class="row align-items-end mt-3">
+                        <div class="col-md-6">
+                            <label for="colorPalette" class="form-label"><b>Color Palette:</b></label>
+                            <select id="colorPalette" class="form-select">
+                                <option value="RdBu">Red-Blue</option>
+                                <option value="Viridis">Viridis</option>
+                                <option value="YlGnBu">Yellow-Green-Blue</option>
+                                <option value="Cividis">Cividis</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
                             <label for="yAxisLabel" class="form-label"><b>Y-Axis Label:</b></label>
                             <select id="yAxisLabel" class="form-select">
                                 <option value="">Feature ID</option> <!-- Default option -->
@@ -63,6 +74,8 @@
                                 {% endfor %}
                             </select>
                         </div>
+                    </div>
+                    <div class="row">
                         <div class="col-12 mt-3">
                             <button type="button" id="updateClustergramBtn" class="btn btn-primary w-100">
                                 <i class="fas fa-sync-alt me-2"></i>Update Clustergram
