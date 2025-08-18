@@ -95,8 +95,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<!--<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>-->
-<!--<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>-->
 <script>
     (function() {
         let currentColumn = null;
@@ -144,11 +142,11 @@
         }
 
         function init() {
-            var dropdownElementList = [].slice.call(document.querySelectorAll('.dropdown-toggle'));
+            // Initialize Bootstrap dropdowns on this page
+            var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
             var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
-                return new bootstrap.Dropdown(dropdownToggleEl)
+                return new bootstrap.Dropdown(dropdownToggleEl);
             });
-
             // Make the headers clickable
             $('#analysis-table th').addClass('clickable-column').on('click', function() {
                 currentColumn = $(this).text().trim();

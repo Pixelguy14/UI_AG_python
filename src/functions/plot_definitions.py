@@ -7,16 +7,23 @@ from sklearn.decomposition import PCA # type: ignore
 from scipy.cluster.hierarchy import linkage, dendrogram # type: ignore
 from sklearn.cross_decomposition import PLSRegression # type: ignore
 
-# Okabe-Ito color palette for color vision deficiency
+# Extended Okabe-Ito color palette for color vision deficiency
 OKABE_ITO_PALETTE = [
-    '#E69F00', # Orange
-    '#56B4E9', # Sky Blue
-    '#009E73', # Greenish Yellow
-    '#F0E442', # Blue (actually a light yellow)
-    '#0072B2', # Vermillion (actually a dark blue)
-    '#D55E00', # Reddish Purple (actually an orange-red)
-    '#CC79A7', # Grey (actually a pinkish purple)
-    '#000000'  # Black
+    '#E69F00', # 1. Orange
+    '#56B4E9', # 2. Sky Blue
+    '#009E73', # 3. Bluish Green
+    '#F0E442', # 4. Yellow
+    '#0072B2', # 5. Blue
+    '#D55E00', # 6. Vermillion
+    '#CC79A7', # 7. Reddish Purple
+    '#000000', # 8. Black
+    '#88CCEE', # 9. Cyan
+    '#44AA99', # 10. Teal
+    '#117733', # 11. Green
+    '#999933', # 12. Olive
+    '#DDCC77', # 13. Sand
+    '#CC6677', # 14. Rose
+    '#882255', # 15. Wine
 ]
 
 def _create_empty_plot_with_message(title, message="No data available for plotting."):
@@ -41,38 +48,56 @@ def create_bar_plot(x, y, title, xaxis_title, yaxis_title, group_vector=None, gr
     if not x or not y:
         return _create_empty_plot_with_message(title)
 
+    fig = go.Figure()
     colors = OKABE_ITO_PALETTE
-    group_color_map = {}
-    bar_colors = []
 
     if group_vector and group_names and isinstance(x, list) and len(x) > 0:
+        # Create a mapping from sample name to its y-value
+        xy_map = {x_val: y_val for x_val, y_val in zip(x, y)}
+
+        # Group samples by their group_id
+        samples_by_group = {}
+        all_samples_in_groups = set()
+
+        for sample_name in x:
+            if sample_name in group_vector and group_vector.get(sample_name, {}).get('groups'):
+                group_id = str(group_vector[sample_name]['groups'][0])
+                if group_id not in samples_by_group:
+                    samples_by_group[group_id] = []
+                samples_by_group[group_id].append(sample_name)
+                all_samples_in_groups.add(sample_name)
+        
+        # Handle samples with no group
+        samples_no_group = [s for s in x if s not in all_samples_in_groups]
+        if samples_no_group:
+            samples_by_group['0'] = samples_no_group
+
+        # Create a trace for each group
+        group_color_map = {}
         unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
         for i, group_id in enumerate(unique_group_ids):
             group_color_map[group_id] = colors[i % len(colors)]
-        
-        for col_name in x:
-            color = '#808080' # default grey
-            if col_name in group_vector and group_vector[col_name]['groups']:
-                first_group_id = str(group_vector[col_name]['groups'][0])
-                if first_group_id in group_color_map:
-                    color = group_color_map[first_group_id]
-            bar_colors.append(color)
-    else:
-        bar_colors = '#440154' # Original color
+        group_color_map['0'] = '#808080' # Color for 'No Group'
 
-    fig = go.Figure(data=[go.Bar(x=x, y=y, marker_color=bar_colors if bar_colors else '#440154')])
-    
-    # Add custom legend
-    if group_names and group_color_map:
-        for group_id, group_name in group_names.items():
-            if group_id != '0' and group_id in group_color_map:
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None], mode='markers',
-                    marker=dict(size=10, color=group_color_map[group_id]),
-                    legendgroup=group_name,
-                    showlegend=True,
-                    name=group_name
-                ))
+        # Sort groups to have 'No Group' last if it exists
+        sorted_group_ids = sorted(samples_by_group.keys(), key=lambda g: (g == '0', g))
+
+        for group_id in sorted_group_ids:
+            group_name = group_names.get(group_id, 'No Group')
+            group_samples = samples_by_group[group_id]
+            group_x = group_samples
+            group_y = [xy_map[s] for s in group_samples]
+            
+            fig.add_trace(go.Bar(
+                x=group_x,
+                y=group_y,
+                name=group_name,
+                marker_color=group_color_map.get(group_id, '#808080')
+            ))
+
+    else:
+        # Original behavior if no groups
+        fig.add_trace(go.Bar(x=x, y=y, marker_color='#440154', name=yaxis_title))
 
     fig.update_layout(
         title=title,
@@ -197,11 +222,11 @@ def create_distribution_plot(data, title):
         yaxis_title='Density',
         template='plotly_white',
         legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02
         )
     )
     
@@ -245,10 +270,13 @@ def create_boxplot(df, title, group_vector=None, group_names=None):
 
     for col in df.columns:
         color = '#808080'  # Default grey for no group
-        if group_vector and col in group_vector and group_vector[col]['groups']:
+        group_name_for_legend = 'No Group'
+        if group_vector and group_names and col in group_vector and group_vector[col]['groups']:
             first_group_id = str(group_vector[col]['groups'][0])
             if first_group_id in group_color_map:
                 color = group_color_map[first_group_id]
+            if first_group_id in group_names:
+                group_name_for_legend = group_names[first_group_id]
 
         data.append(go.Box(
             y=df[col].tolist(),
@@ -256,7 +284,8 @@ def create_boxplot(df, title, group_vector=None, group_names=None):
             marker_color=color,
             line_color=color,
             hoverinfo='y',
-            showlegend=False
+            showlegend=False,
+            legendgroup=group_name_for_legend
         ))
 
     fig = go.Figure(data=data)
@@ -297,10 +326,13 @@ def create_violinplot(df, title, group_vector=None, group_names=None):
 
     for col in df.columns:
         color = '#808080'  # Default grey for no group
-        if group_vector and col in group_vector and group_vector[col]['groups']:
+        group_name_for_legend = 'No Group'
+        if group_vector and group_names and col in group_vector and group_vector[col]['groups']:
             first_group_id = str(group_vector[col]['groups'][0])
             if first_group_id in group_color_map:
                 color = group_color_map[first_group_id]
+            if first_group_id in group_names:
+                group_name_for_legend = group_names[first_group_id]
 
         data.append(go.Violin(
             y=df[col].tolist(),
@@ -313,7 +345,8 @@ def create_violinplot(df, title, group_vector=None, group_names=None):
             marker_color=color,
             line_color=color,
             hoverinfo='y',
-            showlegend=False
+            showlegend=False,
+            legendgroup=group_name_for_legend
         ))
 
     fig = go.Figure(data=data)

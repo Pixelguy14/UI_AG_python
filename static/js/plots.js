@@ -72,7 +72,13 @@ function fetchAndRenderClustergram() {
         let displayTickVals = data.heatmap_y;
         let displayTickText = data.row_labels;
 
-        const maxLabels = 50;
+        // Dynamically determine how many labels to show based on plot height
+        const yAxisDomain = [0.02, 0.8]; // Matches layout.yaxis3.domain
+        const plotHeight = clustergramDiv.clientHeight > 0 ? clustergramDiv.clientHeight : 1000; // Fallback to layout height
+        const yAxisHeight = plotHeight * (yAxisDomain[1] - yAxisDomain[0]);
+        const pixelsPerLabel = 18; // Estimated space needed per label (font size + padding)
+        const maxLabels = Math.floor(yAxisHeight / pixelsPerLabel);
+
         if (data.row_labels.length > maxLabels) {
             const samplingInterval = Math.ceil(data.row_labels.length / maxLabels);
             displayTickVals = [];

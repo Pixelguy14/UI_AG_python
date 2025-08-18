@@ -145,18 +145,6 @@
             processedTable = $('#processed-table').DataTable(dtOptions);
         }
 
-        function syncScroll() {
-            const body1 = $('#original-table').closest('.dataTables_scrollBody');
-            const body2 = $('#processed-table').closest('.dataTables_scrollBody');
-            body1.on('scroll.sync', () => { body2.scrollTop(body1.scrollTop()).scrollLeft(body1.scrollLeft()); });
-            body2.on('scroll.sync', () => { body1.scrollTop(body2.scrollTop()).scrollLeft(body2.scrollLeft()); });
-        }
-
-        function cleanupSyncScroll() {
-            $('#original-table').closest('.dataTables_scrollBody').off('scroll.sync');
-            $('#processed-table').closest('.dataTables_scrollBody').off('scroll.sync');
-        }
-
         window.loadComparisonData = function() {
             let historyIndex = parseInt($('#historySelector').val());
             if (isNaN(historyIndex)) { alert('Please select a valid processing step.'); return; }
@@ -246,8 +234,6 @@
 
         function init() {
             initializeDataTables();
-            syncScroll();
-
             // Use event delegation for clicks
             $('#original-table, #processed-table').on('click.custom', 'thead th', function(e) {
                 if ($(e.target).is('span.DataTables_sort_icon')) return; // Allow sorting via icon
@@ -266,7 +252,6 @@
         }
 
         function cleanup() {
-            cleanupSyncScroll();
             $('#original-table, #processed-table').off('.custom');
             if (originalTable) originalTable.destroy();
             if (processedTable) processedTable.destroy();
@@ -277,7 +262,15 @@
         }
         
         $(document).ready(function() {
-            init();
+            // init();
+            function waitForDataTables() {
+                if (typeof $.fn.DataTable === 'function') {
+                    init();
+                } else {
+                    setTimeout(waitForDataTables, 50);
+                }
+            }
+            waitForDataTables();
         });
     })();
 </script>

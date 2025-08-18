@@ -331,6 +331,39 @@
               window.pageScriptRegistry.cleanup = null; // De-register after running
           }
       });
+
+      // --- HTMX BOOTSTRAP RE-INITIALIZER (Comprehensive) ---
+      htmx.onLoad(function(content) {
+        // Re-initialize Dropdowns
+        var dropdownToggles = content.querySelectorAll('[data-bs-toggle="dropdown"]');
+        dropdownToggles.forEach(function(toggle) {
+            var instance = bootstrap.Dropdown.getInstance(toggle);
+            if (instance) {
+                instance.dispose();
+            }
+            new bootstrap.Dropdown(toggle);
+        });
+
+        // Re-initialize Collapses (for the mobile navbar)
+        var collapseToggles = content.querySelectorAll('[data-bs-toggle="collapse"]');
+        collapseToggles.forEach(function(toggle) {
+            var targetSelector = toggle.getAttribute('data-bs-target');
+            if (!targetSelector) return;
+
+            var targetElement = content.querySelector(targetSelector);
+            // The target element might not be in the swapped content, so check the whole document as a fallback
+            if (!targetElement) {
+                targetElement = document.querySelector(targetSelector);
+            }
+            if (!targetElement) return;
+            
+            var instance = bootstrap.Collapse.getInstance(targetElement);
+            if (instance) {
+                instance.dispose();
+            }
+            new bootstrap.Collapse(targetElement, { toggle: false });
+        });
+      });
     </script>
     
     {% block extra_js %}{% endblock %}
