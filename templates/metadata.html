@@ -138,282 +138,220 @@
 
 {% block extra_js %}
 <script>
-    let assignments = {};
-    let groupAssignments = {}; // Will store arrays of group IDs for each column
-    let groupNames = {0: 'Undefined'};
-    let groupRegexes = {{ group_regexes|tojson|safe }};
-    
-    $(document).ready(function() {
-        // Initialize assignments
-        $('.assignment-select').each(function() {
-            const column = $(this).data('column');
-            assignments[column] = $(this).val();
-        });
-        
-        // Initialize group assignments (empty arrays for all columns)
-        $('.assignment-select').each(function() {
-            const column = $(this).data('column');
-            groupAssignments[column] = []; // Empty array means no groups selected
-        });
-        
-        // Handle assignment changes
-        $('.assignment-select').change(function() {
-            const column = $(this).data('column');
-            assignments[column] = $(this).val();
-        });
-        
-        // Handle column removal
-        $('.remove-column').click(function() {
-            const column = $(this).data('column');
-            assignments[column] = 'removed';
-            const row = $(this).closest('tr');
+    (function() {
+        let assignments = {};
+        let groupAssignments = {}; // Will store arrays of group IDs for each column
+        let groupNames = {0: 'Undefined'};
+        let groupRegexes = {{ group_regexes|tojson|safe }};
 
-            // Create a dummy element off-screen to get the computed color from the CSS class
-            const tempElement = $('<div class="table-danger"></div>').css({
-                position: 'absolute',
-                visibility: 'hidden'
-            }).appendTo('body');
+        function handleRemoveClick(event) {
+            event.preventDefault();
+            const button = $(this);
+            const column = button.data('column');
+            assignments[column] = 'removed';
+            const row = button.closest('tr');
+
+            const tempElement = $('<div class="table-danger"></div>').css({ position: 'absolute', visibility: 'hidden' }).appendTo('body');
             const dangerColor = tempElement.css('background-color');
             tempElement.remove();
 
-            // Apply the color as an inline style with !important to override any conflicting stylesheets
-            row.children('td').each(function() {
-                this.style.setProperty('background-color', dangerColor, 'important');
-            });
+            row.children('td').each(function() { this.style.setProperty('background-color', dangerColor, 'important'); });
             row.find('select, input').prop('disabled', true);
 
-            $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
-                assignments[column] = 'undefined';
-                const restoreRow = $(this).closest('tr');
-                // Remove the inline style to allow normal striping to resume
-                restoreRow.children('td').css('background-color', '');
-                restoreRow.find('select, input').prop('disabled', false);
-                restoreRow.find('.assignment-select').val('undefined');
-                $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
-                // Re-bind remove handler
-                bindRemoveHandler($(this));
-                // Update group select availability
-                updateGroupSelect(column);
-            });
-        });
-        
-        // Initialize group inputs
-        updateGroupInputs();
-    });
-    
-    function updateGroupInputs() {
-        const nGroups = parseInt($('#nGroups').val());
-        const container = $('#groupInputsContainer');
-        container.empty();
-        
-        // Reset group names
-        groupNames = {0: 'Undefined'};
-        
-        if (nGroups > 0) {
-            const row = $('<div class="row g-3"></div>');
+            button.html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success');
+            button.off('click', handleRemoveClick).on('click', handleRestoreClick);
+        }
+
+        function handleRestoreClick(event) {
+            event.preventDefault();
+            const button = $(this);
+            const column = button.data('column');
+            assignments[column] = 'undefined';
+            const restoreRow = button.closest('tr');
+
+            restoreRow.children('td').css('background-color', '');
+            restoreRow.find('select, input').prop('disabled', false);
+            restoreRow.find('.assignment-select').val('undefined');
             
-            for (let i = 1; i <= nGroups; i++) {
-                const currentName = groupNames[i] || `Group ${i}`;
-                const col = $(`
-                    <div class="col-md-6">
-                        <label for="group${i}Name" class="form-label">Group ${i} Name:</label>
-                        <input type="text" class="form-control group-name-input" id="group${i}Name" 
-                               data-group="${i}" placeholder="e.g., Control"
-                               value="${currentName}"
-                               onchange="handleGroupInputChanged(${i})">
-                    </div>
-                `);
-                row.append(col);
-                
-                // Initialize group name
-                groupNames[i] = currentName;
-            }
+            button.html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
             
-            container.append(row);
-        }
-        
-        // Update all group assignment containers
-        updateAllGroupAssignments();
-    }
-    
-    function handleGroupInputChanged(groupIndex) {
-        const name = $(`#group${groupIndex}Name`).val().trim();
-        updateGroupName(groupIndex, name);
-    }
+            window.updateGroupSelect(column);
 
-    function updateGroupName(groupIndex, name) {
-        groupNames[groupIndex] = name || `Group ${groupIndex}`;
-        
-        // Update all group assignment containers with new name
-        updateAllGroupAssignments();
-    }
-    
-    function updateAllGroupAssignments() {
-        $('.group-assignment-container').each(function() {
-            const column = $(this).data('column');
-            updateGroupAssignmentContainer(column);
-        });
-    }
-    
-    function updateGroupAssignmentContainer(column) {
-        const container = $(`.group-assignment-container[data-column="${column}"]`);
-        const isMetadata = $(`.assignment-select[data-column="${column}"]`).val() === 'metadata';
-        const isRemoved = assignments[column] === 'removed';
-        
-        // Store current selections
-        const currentSelections = groupAssignments[column] || [];
-        
-        // Clear container
-        container.empty();
-        
-        if (isMetadata || isRemoved) {
-            container.append('<small class="text-muted">N/A for metadata</small>');
-            groupAssignments[column] = [];
-            return;
+            button.off('click', handleRestoreClick).on('click', handleRemoveClick);
         }
-        
-        // Create checkboxes for each group
-        const nGroups = parseInt($('#nGroups').val());
-        
-        if (nGroups === 0) {
-            container.append('<small class="text-muted">No groups defined</small>');
-            groupAssignments[column] = [];
-            return;
-        }
-        
-        const checkboxContainer = $('<div class="d-flex flex-wrap gap-2"></div>');
-        
-        for (let i = 1; i <= nGroups; i++) {
-            const isChecked = currentSelections.includes(i);
-            const checkbox = $(`
-                <div class="form-check form-check-inline">
-                    <input class="form-check-input group-checkbox" type="checkbox" 
-                           id="group_${column}_${i}" data-column="${column}" data-group="${i}"
-                           ${isChecked ? 'checked' : ''}>
-                    <label class="form-check-label" for="group_${column}_${i}">
-                        ${i} - ${groupNames[i]}
-                    </label>
-                </div>
-            `);
-            checkboxContainer.append(checkbox);
-        }
-        
-        container.append(checkboxContainer);
-        
-        // Bind change events to checkboxes
-        container.find('.group-checkbox').change(function() {
-            updateGroupAssignment(column);
-        });
-    }
-    
-    function updateGroupAssignment(column) {
-        const selectedGroups = [];
-        $(`.group-checkbox[data-column="${column}"]:checked`).each(function() {
-            selectedGroups.push(parseInt($(this).data('group')));
-        });
-        groupAssignments[column] = selectedGroups;
-    }
-    
-    function updateGroupSelect(column) {
-        updateGroupAssignmentContainer(column);
-    }
-    
-    function bindRemoveHandler(button) {
-        button.off('click').click(function() {
-            const column = $(this).data('column');
-            assignments[column] = 'removed';
-            const row = $(this).closest('tr');
 
-            // Create a dummy element off-screen to get the computed color from the CSS class
-            const tempElement = $('<div class="table-danger"></div>').css({
-                position: 'absolute',
-                visibility: 'hidden'
-            }).appendTo('body');
-            const dangerColor = tempElement.css('background-color');
-            tempElement.remove();
-
-            // Apply the color as an inline style with !important to override any conflicting stylesheets
-            row.children('td').each(function() {
-                this.style.setProperty('background-color', dangerColor, 'important');
-            });
-            row.find('select, input').prop('disabled', true);
-
-            $(this).html('<i class="fas fa-undo"></i> Restore').removeClass('btn-danger').addClass('btn-success').off('click').click(function() {
-                assignments[column] = 'undefined';
-                const restoreRow = $(this).closest('tr');
-                // Remove the inline style to allow normal striping to resume
-                restoreRow.children('td').css('background-color', '');
-                restoreRow.find('select, input').prop('disabled', false);
-                restoreRow.find('.assignment-select').val('undefined');
-                $(this).html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
-                bindRemoveHandler($(this));
-                updateGroupSelect(column);
-            });
-        });
-    }
-    
-    function resetAssignments() {
-        if (confirm('Are you sure you want to reset all assignments?')) {
-            $('.assignment-select').val('undefined').prop('disabled', false);
-            // Remove any inline styles from all table cells to restore striping
-            $('tr').children('td').css('background-color', '');
-            $('.remove-column').html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
-            
-            // Reset assignments objects
+        function init() {
+            // Initialize assignments
             $('.assignment-select').each(function() {
                 const column = $(this).data('column');
-                assignments[column] = 'undefined';
+                assignments[column] = $(this).val();
+            });
+            
+            // Initialize group assignments
+            $('.assignment-select').each(function() {
+                const column = $(this).data('column');
                 groupAssignments[column] = [];
             });
             
-            // Re-bind remove handlers
-            $('.remove-column').each(function() {
-                bindRemoveHandler($(this));
+            // Handle assignment changes
+            $('.assignment-select').on('change', function() {
+                const column = $(this).data('column');
+                assignments[column] = $(this).val();
             });
             
-            // Reset group inputs
-            $('#nGroups').val(2);
-            updateGroupInputs();
+            // Handle column removal
+            $('.remove-column').on('click', handleRemoveClick);
+            
+            // Initialize group inputs
+            window.updateGroupInputs();
         }
-    }
-    
-    function saveAssignments() {
-        // Validate that all groups have names
-        const nGroups = parseInt($('#nGroups').val());
-        for (let i = 1; i <= nGroups; i++) {
-            const name = $(`#group${i}Name`).val().trim();
-            if (!name) {
-                alert(`Please provide a name for Group ${i}`);
-                $(`#group${i}Name`).focus();
+
+        function cleanup() {
+            $('.assignment-select').off('change');
+            $('.remove-column').off('click', handleRemoveClick).off('click', handleRestoreClick);
+            $('.group-checkbox').off('change');
+        }
+
+        window.updateGroupInputs = function() {
+            const nGroups = parseInt($('#nGroups').val());
+            const container = $('#groupInputsContainer');
+            container.empty();
+            groupNames = {0: 'Undefined'};
+            
+            if (nGroups > 0) {
+                const row = $('<div class="row g-3"></div>');
+                for (let i = 1; i <= nGroups; i++) {
+                    const currentName = groupNames[i] || `Group ${i}`;
+                    const col = $(`
+                        <div class="col-md-6">
+                            <label for="group${i}Name" class="form-label">Group ${i} Name:</label>
+                            <input type="text" class="form-control group-name-input" id="group${i}Name" 
+                                   data-group="${i}" placeholder="e.g., Control" value="${currentName}"
+                                   onchange="handleGroupInputChanged(${i})">
+                        </div>
+                    `);
+                    row.append(col);
+                    groupNames[i] = currentName;
+                }
+                container.append(row);
+            }
+            updateAllGroupAssignments();
+        }
+        
+        window.handleGroupInputChanged = function(groupIndex) {
+            const name = $(`#group${groupIndex}Name`).val().trim();
+            updateGroupName(groupIndex, name);
+        }
+
+        function updateGroupName(groupIndex, name) {
+            groupNames[groupIndex] = name || `Group ${groupIndex}`;
+            updateAllGroupAssignments();
+        }
+        
+        function updateAllGroupAssignments() {
+            $('.group-assignment-container').each(function() {
+                const column = $(this).data('column');
+                updateGroupAssignmentContainer(column);
+            });
+        }
+        
+        function updateGroupAssignmentContainer(column) {
+            const container = $(`.group-assignment-container[data-column="${column}"]`);
+            const isMetadata = $(`.assignment-select[data-column="${column}"]`).val() === 'metadata';
+            const isRemoved = assignments[column] === 'removed';
+            const currentSelections = groupAssignments[column] || [];
+            container.empty();
+            
+            if (isMetadata || isRemoved) {
+                container.append('<small class="text-muted">N/A for metadata</small>');
+                groupAssignments[column] = [];
                 return;
             }
+            
+            const nGroups = parseInt($('#nGroups').val());
+            if (nGroups === 0) {
+                container.append('<small class="text-muted">No groups defined</small>');
+                groupAssignments[column] = [];
+                return;
+            }
+            
+            const checkboxContainer = $('<div class="d-flex flex-wrap gap-2"></div>');
+            for (let i = 1; i <= nGroups; i++) {
+                const isChecked = currentSelections.includes(i);
+                const checkbox = $(`
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input group-checkbox" type="checkbox" 
+                               id="group_${column}_${i}" data-column="${column}" data-group="${i}"
+                               ${isChecked ? 'checked' : ''}>
+                        <label class="form-check-label" for="group_${column}_${i}">${i} - ${groupNames[i]}</label>
+                    </div>
+                `);
+                checkboxContainer.append(checkbox);
+            }
+            container.append(checkboxContainer);
+            container.find('.group-checkbox').on('change', function() { updateGroupAssignment(column); });
         }
         
-        const data = {
-            assignments: assignments,
-            groupAssignments: groupAssignments,
-            groupNames: groupNames,
-            nGroups: nGroups,
-            groupRegexes: groupRegexes
-        };
+        function updateGroupAssignment(column) {
+            const selectedGroups = [];
+            $(`.group-checkbox[data-column="${column}"]:checked`).each(function() {
+                selectedGroups.push(parseInt($(this).data('group')));
+            });
+            groupAssignments[column] = selectedGroups;
+        }
         
-        $.ajax({
-            url: '/metadata',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(data),
-            success: function(response) {
-                if (response.success) {
-                    alert('Assignments and groups saved successfully!');
-                    window.location.href = '/summary';
-                } else {
-                    alert('Error saving assignments: ' + response.message);
-                }
-            },
-            error: function() {
-                alert('Error saving assignments. Please try again.');
+        window.updateGroupSelect = function(column) {
+            updateGroupAssignmentContainer(column);
+        }
+        
+        window.resetAssignments = function() {
+            if (confirm('Are you sure you want to reset all assignments?')) {
+                $('.assignment-select').val('undefined').prop('disabled', false);
+                $('tr').children('td').css('background-color', '');
+                $('.remove-column').html('<i class="fas fa-times"></i> Remove').removeClass('btn-success').addClass('btn-danger');
+                
+                $('.assignment-select').each(function() {
+                    const column = $(this).data('column');
+                    assignments[column] = 'undefined';
+                    groupAssignments[column] = [];
+                });
+                
+                $('.remove-column').off('click').on('click', handleRemoveClick);
+                
+                $('#nGroups').val(2);
+                updateGroupInputs();
             }
-        });
-    }
+        }
+        
+        window.saveAssignments = function() {
+            const nGroups = parseInt($('#nGroups').val());
+            for (let i = 1; i <= nGroups; i++) {
+                if (!$(`#group${i}Name`).val().trim()) {
+                    alert(`Please provide a name for Group ${i}`);
+                    $(`#group${i}Name`).focus();
+                    return;
+                }
+            }
+            
+            $.ajax({
+                url: '/metadata',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ assignments, groupAssignments, groupNames, nGroups, groupRegexes }),
+                success: function(response) {
+                    if (response.success) {
+                        alert('Assignments and groups saved successfully!');
+                        window.location.href = '/summary';
+                    } else {
+                        alert('Error saving assignments: ' + response.message);
+                    }
+                },
+                error: function() { alert('Error saving assignments. Please try again.'); }
+            });
+        }
+
+        if (window.pageScriptRegistry) { window.pageScriptRegistry.cleanup = cleanup; }
+        init();
+    })();
 </script>
 {% endblock %}

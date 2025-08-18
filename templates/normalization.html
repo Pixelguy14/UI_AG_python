@@ -148,83 +148,56 @@
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/export.js') }}"></script>
 <script>
-    const methodDescriptions = {
-        'tic': 'Normalizes each sample by its total ion count (sum of intensities).',
-        'mtic': 'Normalizes each sample by its TIC, then scales to the median TIC of all samples.',
-        'median': 'Normalizes each sample (column) by its median intensity. Robust to outliers.',
-        'quantile': 'Forces all samples to have identical intensity distributions.',
-        'pqn': 'Corrects for dilution effects based on a reference spectrum (median).'
-    };
+    (function() {
+        const methodDescriptions = {
+            'tic': 'Normalizes each sample by its total ion count (sum of intensities).',
+            'mtic': 'Normalizes each sample by its TIC, then scales to the median TIC of all samples.',
+            'median': 'Normalizes each sample (column) by its median intensity. Robust to outliers.',
+            'quantile': 'Forces all samples to have identical intensity distributions.',
+            'pqn': 'Corrects for dilution effects based on a reference spectrum (median).'
+        };
 
-    let currentPlotTypeBefore = 'boxplot';
-    let currentPlotTypeAfter = 'boxplot';
+        let currentPlotTypeBefore = 'boxplot';
+        let currentPlotTypeAfter = 'boxplot';
 
-    function showFlashMessage(message, category) {
-        const flashDiv = $('#imputation-flash-messages');
-        const alertHtml = `
-            <div class="alert alert-${category} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>`;
-        flashDiv.html(alertHtml);
-    }
+        function showFlashMessage(message, category) {
+            const flashDiv = $('#imputation-flash-messages');
+            const alertHtml = `
+                <div class="alert alert-${category} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`;
+            flashDiv.html(alertHtml);
+        }
 
-    function updateNormalizationOptions() {
-        const method = $('#normalizationMethod').val();
-        $('#descriptionText').text(methodDescriptions[method]);
-        $('#methodParameters').html('');
-    }
+        window.updateNormalizationOptions = function() {
+            const method = $('#normalizationMethod').val();
+            $('#descriptionText').text(methodDescriptions[method]);
+            $('#methodParameters').html('');
+        }
 
-    function updateProcessingSteps(steps) {
-        const stepsList = $('#processingSteps');
-        stepsList.empty();
-        steps.forEach(function(step) {
-            const listItem = `<li class="list-group-item"><i class="fas ${step.icon} ${step.color} me-2"></i>${step.message}</li>`;
-            stepsList.append(listItem);
-        });
-    }
+        function updateProcessingSteps(steps) {
+            const stepsList = $('#processingSteps');
+            stepsList.empty();
+            steps.forEach(function(step) {
+                const listItem = `<li class="list-group-item"><i class="fas ${step.icon} ${step.color} me-2"></i>${step.message}</li>`;
+                stepsList.append(listItem);
+            });
+        }
 
-    function applyNormalization() {
-        const method = $('#normalizationMethod').val();
-        const btn = $('#applyNormalizationBtn');
-        const progress = $('#normalizationProgress');
+        window.applyNormalization = function() {
+            const method = $('#normalizationMethod').val();
+            const btn = $('#applyNormalizationBtn');
+            const progress = $('#normalizationProgress');
 
-        progress.show();
-        btn.prop('disabled', true);
-        
-        $.ajax({
-            url: '{{ url_for("processing.apply_normalization") }}',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({method: method}),
-            success: function(response) {
-                if (response.success) {
-                    showFlashMessage(response.message, 'success');
-                    $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
-                    updateProcessingSteps(response.steps);
-                    renderAllPlots(response.plots);
-                } else {
-                    showFlashMessage(response.error, 'danger');
-                }
-            },
-            error: function(xhr) {
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
-                showFlashMessage(errorMsg, 'danger');
-            },
-            complete: function() {
-                progress.hide();
-                btn.prop('disabled', false);
-            }
-        });
-    }
-
-    function resetData() {
-        if (confirm('Are you sure you want to undo the last processing step?')) {
+            progress.show();
+            btn.prop('disabled', true);
+            
             $.ajax({
-                url: '{{ url_for("processing.reset_sample_step") }}',
+                url: '{{ url_for("processing.apply_normalization") }}',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({context: 'normalization'}),
+                data: JSON.stringify({method: method}),
                 success: function(response) {
                     if (response.success) {
                         showFlashMessage(response.message, 'success');
@@ -235,110 +208,142 @@
                         showFlashMessage(response.error, 'danger');
                     }
                 },
-                error: function() {
-                    showFlashMessage('An error occurred while resetting data.', 'danger');
+                error: function(xhr) {
+                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
+                    showFlashMessage(errorMsg, 'danger');
+                },
+                complete: function() {
+                    progress.hide();
+                    btn.prop('disabled', false);
                 }
             });
         }
-    }
 
-    function renderPlot(plotId, plotData) {
-        const plotDiv = $(`#${plotId}`);
-        if (plotData) {
-            try {
-                const parsedData = JSON.parse(plotData);
-                Plotly.newPlot(plotId, parsedData.data, parsedData.layout);
-            } catch (e) {
-                plotDiv.html(`<div class="alert alert-danger">Plot error: ${e}</div>`);
+        window.resetData = function() {
+            if (confirm('Are you sure you want to undo the last processing step?')) {
+                $.ajax({
+                    url: '{{ url_for("processing.reset_sample_step") }}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({context: 'normalization'}),
+                    success: function(response) {
+                        if (response.success) {
+                            showFlashMessage(response.message, 'success');
+                            $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                            updateProcessingSteps(response.steps);
+                            renderAllPlots(response.plots);
+                        } else {
+                            showFlashMessage(response.error, 'danger');
+                        }
+                    },
+                    error: function() {
+                        showFlashMessage('An error occurred while resetting data.', 'danger');
+                    }
+                });
             }
-        } else {
-            plotDiv.html('<div class="alert alert-warning">No plot data available.</div>');
         }
-    }
 
-    function renderDistributionPlots(plots) {
-        if (plots && plots.dist_before) {
+        function renderPlot(plotId, plotData) {
+            const plotDiv = document.getElementById(plotId);
+            if (plotDiv && plotData) {
+                try {
+                    const parsedData = JSON.parse(plotData);
+                    Plotly.newPlot(plotId, parsedData.data, parsedData.layout, { responsive: true });
+                } catch (e) {
+                    plotDiv.innerHTML = `<div class="alert alert-danger">Plot error: ${e}</div>`;
+                }
+            }
+        }
+
+        function renderAllPlots(plots) {
+            if (!plots) return;
             renderPlot('distributionPlotBefore', plots.dist_before);
-        }
-        if (plots && plots.dist_after) {
-            renderPlot('distributionPlotAfter', plots.dist_after);
-        }
-    }
-
-    function renderPcaPlots(plots) {
-        if (plots && plots.pca_before) {
             renderPlot('pcaPlotBefore', plots.pca_before);
-        }
-        if (plots && plots.pca_after) {
+            renderPlot('distributionPlotAfter', plots.dist_after);
             renderPlot('pcaPlotAfter', plots.pca_after);
         }
-    }
 
-    function renderAllPlots(plots) {
-        renderDistributionPlots(plots);
-        renderPcaPlots(plots);
-    }
+        function updatePlot(plotType, context) {
+            const plotDivId = context === 'before' ? 'distributionPlotBefore' : 'distributionPlotAfter';
+            const plotDiv = document.getElementById(plotDivId);
+            const url = `{{ url_for("api.get_distribution_plot", plot_type="", context="") }}${plotType}/${context}`;
 
-    function updatePlot(plotType, context) {
-        const plotDivId = context === 'before' ? 'distributionPlotBefore' : 'distributionPlotAfter';
-        const plotDiv = document.getElementById(plotDivId);
-        const url = `{{ url_for("api.get_distribution_plot", plot_type="", context="") }}${plotType}/${context}`;
-
-        $.get(url)
-            .done(function(data) {
-                if (data.error) {
-                    $(plotDiv).html(`<div class="alert alert-danger">${data.error}</div>`);
-                    return;
-                }
-                const plotData = JSON.parse(data.plot);
-                Plotly.newPlot(plotDiv, plotData.data, plotData.layout);
-            })
-            .fail(function() {
-                $(plotDiv).html('<div class="alert alert-danger">Error loading plot.</div>');
-            });
-    }
-
-    function updateButtonStates() {
-        $('#boxplot-btn-before').toggleClass('active', currentPlotTypeBefore === 'boxplot');
-        $('#violinplot-btn-before').toggleClass('active', currentPlotTypeBefore === 'violinplot');
-        $('#boxplot-btn-after').toggleClass('active', currentPlotTypeAfter === 'boxplot');
-        $('#violinplot-btn-after').toggleClass('active', currentPlotTypeAfter === 'violinplot');
-    }
-
-    $(document).ready(function() {
-        updateNormalizationOptions();
-        {% if plots %}
-        try {
-            renderAllPlots({{ plots|tojson|safe }});
-        } catch (e) {
-            console.error('Error rendering initial plots:', e);
+            $.get(url)
+                .done(function(data) {
+                    if (data.error) {
+                        $(plotDiv).html(`<div class="alert alert-danger">${data.error}</div>`);
+                        return;
+                    }
+                    const plotData = JSON.parse(data.plot);
+                    Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
+                })
+                .fail(function() {
+                    $(plotDiv).html('<div class="alert alert-danger">Error loading plot.</div>');
+                });
         }
-        {% endif %}
 
-        // Button listeners
-        $('#boxplot-btn-before').click(function() {
-            currentPlotTypeBefore = 'boxplot';
-            updateButtonStates();
-            updatePlot('boxplot', 'before');
-        });
+        function updateButtonStates() {
+            $('#boxplot-btn-before').toggleClass('active', currentPlotTypeBefore === 'boxplot');
+            $('#violinplot-btn-before').toggleClass('active', currentPlotTypeBefore === 'violinplot');
+            $('#boxplot-btn-after').toggleClass('active', currentPlotTypeAfter === 'boxplot');
+            $('#violinplot-btn-after').toggleClass('active', currentPlotTypeAfter === 'violinplot');
+        }
 
-        $('#violinplot-btn-before').click(function() {
-            currentPlotTypeBefore = 'violinplot';
-            updateButtonStates();
-            updatePlot('violinplot', 'before');
-        });
+        function init() {
+            window.updateNormalizationOptions();
+            {% if plots %}
+            try {
+                renderAllPlots({{ plots|tojson|safe }});
+            } catch (e) {
+                console.error('Error rendering initial plots:', e);
+            }
+            {% endif %}
 
-        $('#boxplot-btn-after').click(function() {
-            currentPlotTypeAfter = 'boxplot';
-            updateButtonStates();
-            updatePlot('boxplot', 'after');
-        });
+            // Button listeners
+            $('#boxplot-btn-before').on('click', function() {
+                currentPlotTypeBefore = 'boxplot';
+                updateButtonStates();
+                updatePlot('boxplot', 'before');
+            });
 
-        $('#violinplot-btn-after').click(function() {
-            currentPlotTypeAfter = 'violinplot';
+            $('#violinplot-btn-before').on('click', function() {
+                currentPlotTypeBefore = 'violinplot';
+                updateButtonStates();
+                updatePlot('violinplot', 'before');
+            });
+
+            $('#boxplot-btn-after').on('click', function() {
+                currentPlotTypeAfter = 'boxplot';
+                updateButtonStates();
+                updatePlot('boxplot', 'after');
+            });
+
+            $('#violinplot-btn-after').on('click', function() {
+                currentPlotTypeAfter = 'violinplot';
+                updateButtonStates();
+                updatePlot('violinplot', 'after');
+            });
             updateButtonStates();
-            updatePlot('violinplot', 'after');
-        });
-    });
+        }
+
+        function cleanup() {
+            // Detach event handlers
+            $('#boxplot-btn-before, #violinplot-btn-before, #boxplot-btn-after, #violinplot-btn-after').off('click');
+
+            // Purge plots
+            const plotIds = ['distributionPlotBefore', 'pcaPlotBefore', 'distributionPlotAfter', 'pcaPlotAfter'];
+            plotIds.forEach(id => {
+                const plotDiv = document.getElementById(id);
+                if (plotDiv && plotDiv.innerHTML) {
+                    Plotly.purge(plotDiv);
+                }
+            });
+        }
+
+        if (window.pageScriptRegistry) {
+            window.pageScriptRegistry.cleanup = cleanup;
+        }
+        init();
+    })();
 </script>
 {% endblock %}

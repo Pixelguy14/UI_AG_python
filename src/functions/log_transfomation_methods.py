@@ -79,4 +79,5 @@ def yeo_johnson_transform(df):
     """
     df_transformed = df.copy().T
     pt = PowerTransformer(method='yeo-johnson', standardize=False)
-    return pd.DataFrame(pt.fit_transform(df_transformed), index=df.index, columns=df.columns).T
+    transformed_array = pt.fit_transform(df_transformed)
+    return pd.DataFrame(transformed_array, index=df_transformed.index, columns=df_transformed.columns).T

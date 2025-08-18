@@ -149,44 +149,60 @@ def create_pie_chart(labels, values, title):
     fig.update_layout(title=title, template='plotly_white')
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
-def create_distribution_plot(data_series, column_name):
-    if data_series.empty:
-        return _create_empty_plot_with_message(f'Distribution of {column_name}')
+def create_distribution_plot(data, title):
+    if data.empty:
+        return _create_empty_plot_with_message(title)
 
     fig = go.Figure()
-    
-    # Histogram
-    fig.add_trace(go.Histogram(
-        x=data_series.tolist(),
-        histnorm='probability density',
-        nbinsx=30,
-        name='Histogram',
-        opacity=0.7
-    ))
-    
-    # Add statistics text
-    stats_text = f"n = {len(data_series)}<br>"
-    stats_text += f"μ = {data_series.mean():.4f}<br>"
-    stats_text += f"σ = {data_series.std():.4f}<br>"
-    stats_text += f"Skew = {data_series.skew():.4f}<br>"
-    stats_text += f"Kurt = {data_series.kurtosis():.4f}"
-    
-    fig.add_annotation(
-        text=stats_text,
-        xref="paper", yref="paper",
-        x=0.98, y=0.98,
-        showarrow=False,
-        align="right",
-        bgcolor="white",
-        bordercolor="black",
-        borderwidth=1
-    )
-    
+
+    if isinstance(data, pd.DataFrame):
+        colors = OKABE_ITO_PALETTE
+        for i, col in enumerate(data.columns):
+            fig.add_trace(go.Histogram(
+                x=data[col].dropna().tolist(),
+                name=str(col),
+                histnorm='probability density',
+                opacity=0.6,
+                marker_color=colors[i % len(colors)]
+            ))
+        fig.update_layout(barmode='overlay')
+    elif isinstance(data, pd.Series):
+        fig.add_trace(go.Histogram(
+            x=data.dropna().tolist(),
+            histnorm='probability density',
+            nbinsx=30,
+            name='Histogram',
+            opacity=0.7
+        ))
+        stats_text = f"n = {len(data)}<br>"
+        stats_text += f"μ = {data.mean():.4f}<br>"
+        stats_text += f"σ = {data.std():.4f}<br>"
+        stats_text += f"Skew = {data.skew():.4f}<br>"
+        stats_text += f"Kurt = {data.kurtosis():.4f}"
+        
+        fig.add_annotation(
+            text=stats_text,
+            xref="paper", yref="paper",
+            x=0.98, y=0.98,
+            showarrow=False,
+            align="right",
+            bgcolor="rgba(255,255,255,0.5)",
+            bordercolor="black",
+            borderwidth=1
+        )
+
     fig.update_layout(
-        title=f'Distribution of {column_name}',
+        title=title,
         xaxis_title='Value',
-        yaxis_title='Frequency',
-        template='plotly_white'
+        yaxis_title='Density',
+        template='plotly_white',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
     
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)

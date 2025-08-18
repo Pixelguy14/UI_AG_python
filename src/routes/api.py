@@ -175,6 +175,7 @@ def get_comparison_data(history_index):
         return jsonify({'error': 'Invalid history index'})
 
     df_processed = session['df_history'][history_index]
+    # session['comparison_processed_df'] = df_processed
     processed_html = df_processed.to_html(classes='table table-striped table-sm', table_id='processed-table')
 
     return jsonify({

@@ -89,7 +89,7 @@ def view_groups():
     """View current group assignments"""
     if not session.get('group_vector'):
         flash('No group assignments found. Please define groups in metadata first.')
-        return redirect(url_for('core.metadata'))
+        return redirect(url_for('analysis.metadata'))
     
     group_vector = session['group_vector']
     group_names = session.get('group_names', {})
@@ -220,7 +220,7 @@ def multivariate_analysis():
 def comparison():
     if not session.get('df_history'):
         flash('Please define sample data first')
-        return redirect(url_for('core.metadata'))
+        return redirect(url_for('analysis.metadata'))
     
     df_original = session['df_sample']
     df_history = session.get('df_history', [])
@@ -232,6 +232,8 @@ def comparison():
             history_options.append((i + 1, step['message']))
 
     df_processed = df_history[-1]
+    # session['comparison_original_df'] = df_original
+    # session['comparison_processed_df'] = df_processed
     processed_html = df_processed.to_html(classes='table table-striped table-sm', table_id='processed-table')
     original_html = df_original.to_html(classes='table table-striped table-sm', table_id='original-table')
 

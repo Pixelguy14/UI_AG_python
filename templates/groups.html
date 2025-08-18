@@ -141,177 +141,194 @@
 
 {% block extra_js %}
 <script>
-    let groupAssignments = {{ group_assignments|tojson|safe }};
-    let groupNames = {{ group_names|tojson|safe }};
-    let groupRegexes = {{ group_regexes|tojson|safe }};
+    (function() {
+        let groupAssignments = {{ group_assignments|tojson|safe }};
+        let groupNames = {{ group_names|tojson|safe }};
+        let groupRegexes = {{ group_regexes|tojson|safe }};
 
-    function updateGroupInputs() {
-        const nGroups = parseInt($('#nGroups').val());
-        const container = $('#groupInputsContainer');
-        container.empty();
-        
-        let newGroupNames = {0: 'Undefined'};
+        function init() {
+            // Initial setup when page is loaded
+            updateGroupInputs();
+        }
 
-        if (nGroups > 0) {
-            const row = $('<div class="row g-3"></div>');
-            for (let i = 1; i <= nGroups; i++) {
-                const currentName = groupNames[i] || `Group ${i}`;
-                const currentRegex = groupRegexes[i] || '';
-                const inputValue = currentRegex ? `${currentName} (${currentRegex})` : currentName;
-                newGroupNames[i] = currentName;
-                const col = $(`
-                    <div class="col-md-6">
-                        <label for="group${i}Name" class="form-label">Group ${i} Name (and optional Regex):</label>
-                        <input type="text" class="form-control group-name-input" id="group${i}Name" 
-                               data-group="${i}" value="${inputValue}"
-                               onchange="handleGroupInputChanged(${i})">
-                    </div>
-                `);
-                row.append(col);
+        function cleanup() {
+            // Remove event listeners to prevent memory leaks
+            $(".group-checkbox").off("change");
+        }
+
+        // Make functions available in the global scope for inline event handlers
+        window.updateGroupInputs = function() {
+            const nGroups = parseInt($('#nGroups').val());
+            const container = $('#groupInputsContainer');
+            container.empty();
+            
+            let newGroupNames = {0: 'Undefined'};
+
+            if (nGroups > 0) {
+                const row = $('<div class="row g-3"></div>');
+                for (let i = 1; i <= nGroups; i++) {
+                    const currentName = groupNames[i] || `Group ${i}`;
+                    const currentRegex = groupRegexes[i] || '';
+                    const inputValue = currentRegex ? `${currentName} (${currentRegex})` : currentName;
+                    newGroupNames[i] = currentName;
+                    const col = $(`
+                        <div class="col-md-6">
+                            <label for="group${i}Name" class="form-label">Group ${i} Name (and optional Regex):</label>
+                            <input type="text" class="form-control group-name-input" id="group${i}Name" 
+                                   data-group="${i}" value="${inputValue}"
+                                   onchange="handleGroupInputChanged(${i})">
+                        </div>
+                    `);
+                    row.append(col);
+                }
+                container.append(row);
             }
-            container.append(row);
-        }
-        groupNames = newGroupNames;
-        updateAllGroupAssignments();
-    }
-
-    function handleGroupInputChanged(groupIndex) {
-        const fullInput = $(`#group${groupIndex}Name`).val().trim();
-        const openParenIndex = fullInput.indexOf('(');
-        const closeParenIndex = fullInput.lastIndexOf(')');
-        
-        let name = fullInput;
-        let regexPattern = '';
-
-        if (openParenIndex !== -1 && closeParenIndex !== -1 && closeParenIndex > openParenIndex) {
-            name = fullInput.substring(0, openParenIndex).trim();
-            regexPattern = fullInput.substring(openParenIndex + 1, closeParenIndex).trim();
+            groupNames = newGroupNames;
+            updateAllGroupAssignments();
         }
 
-        updateGroupName(groupIndex, name);
-        if (regexPattern) { // Only call if regexPattern is not empty
-            applyRegexToGroup(groupIndex, regexPattern);
-        }
-    }
+        window.handleGroupInputChanged = function(groupIndex) {
+            const fullInput = $(`#group${groupIndex}Name`).val().trim();
+            const openParenIndex = fullInput.indexOf('(');
+            const closeParenIndex = fullInput.lastIndexOf(')');
+            
+            let name = fullInput;
+            let regexPattern = '';
 
-    function updateGroupName(groupIndex, name) {
-        groupNames[groupIndex] = name || `Group ${groupIndex}`;
-        updateAllGroupAssignments();
-    }
+            if (openParenIndex !== -1 && closeParenIndex !== -1 && closeParenIndex > openParenIndex) {
+                name = fullInput.substring(0, openParenIndex).trim();
+                regexPattern = fullInput.substring(openParenIndex + 1, closeParenIndex).trim();
+            }
 
-    function updateAllGroupAssignments() {
-        $('.group-assignment-container').each(function() {
-            const column = $(this).data('column');
-            updateGroupAssignmentContainer(column);
-        });
-    }
-
-    function updateGroupAssignmentContainer(column) {
-        const container = $(`.group-assignment-container[data-column="${column}"]`);
-        const currentSelections = groupAssignments[column] || [];
-        container.empty();
-
-        const nGroups = parseInt($('#nGroups').val());
-        if (nGroups === 0) {
-            container.append('<small class="text-muted">No groups defined</small>');
-            groupAssignments[column] = [];
-            return;
+            updateGroupName(groupIndex, name);
+            if (regexPattern) { // Only call if regexPattern is not empty
+                applyRegexToGroup(groupIndex, regexPattern);
+            }
         }
 
-        const checkboxContainer = $('<div class="d-flex flex-wrap gap-2"></div>');
-        for (let i = 1; i <= nGroups; i++) {
-            const isChecked = currentSelections.includes(i) || currentSelections.includes(String(i));
-            const checkbox = $(`
-                <div class="form-check form-check-inline">
-                    <input class="form-check-input group-checkbox" type="checkbox" 
-                           id="group_${column}_${i}" data-column="${column}" data-group="${i}"
-                           ${isChecked ? 'checked' : ''}>
-                    <label class="form-check-label" for="group_${column}_${i}">
-                        ${i} - ${groupNames[i] || 'Unnamed'}
-                    </label>
-                </div>
-            `);
-            checkboxContainer.append(checkbox);
+        function updateGroupName(groupIndex, name) {
+            groupNames[groupIndex] = name || `Group ${groupIndex}`;
+            updateAllGroupAssignments();
         }
-        container.append(checkboxContainer);
 
-        container.find('.group-checkbox').change(function() {
-            updateGroupAssignment(column);
-        });
-    }
+        function updateAllGroupAssignments() {
+            $('.group-assignment-container').each(function() {
+                const column = $(this).data('column');
+                updateGroupAssignmentContainer(column);
+            });
+        }
 
-    function updateGroupAssignment(column) {
-        const selectedGroups = [];
-        $(`.group-checkbox[data-column="${column}"]:checked`).each(function() {
-            selectedGroups.push(parseInt($(this).data('group')));
-        });
-        groupAssignments[column] = selectedGroups;
-    }
+        function updateGroupAssignmentContainer(column) {
+            const container = $(`.group-assignment-container[data-column="${column}"]`);
+            const currentSelections = groupAssignments[column] || [];
+            container.empty();
 
-    function saveGroupAssignments() {
-        const nGroups = parseInt($('#nGroups').val());
-        for (let i = 1; i <= nGroups; i++) {
-            if (!groupNames[i]) {
-                alert(`Please provide a name for Group ${i}`);
+            const nGroups = parseInt($('#nGroups').val());
+            if (nGroups === 0) {
+                container.append('<small class="text-muted">No groups defined</small>');
+                groupAssignments[column] = [];
                 return;
             }
+
+            const checkboxContainer = $('<div class="d-flex flex-wrap gap-2"></div>');
+            for (let i = 1; i <= nGroups; i++) {
+                const isChecked = currentSelections.includes(i) || currentSelections.includes(String(i));
+                const checkbox = $(`
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input group-checkbox" type="checkbox" 
+                               id="group_${column}_${i}" data-column="${column}" data-group="${i}"
+                               ${isChecked ? 'checked' : ''}>
+                        <label class="form-check-label" for="group_${column}_${i}">
+                            ${i} - ${groupNames[i] || 'Unnamed'}
+                        </label>
+                    </div>
+                `);
+                checkboxContainer.append(checkbox);
+            }
+            container.append(checkboxContainer);
+
+            container.find('.group-checkbox').on('change', function() {
+                updateGroupAssignment(column);
+            });
         }
 
-        const data = {
-            groupAssignments: groupAssignments,
-            groupNames: groupNames,
-            nGroups: nGroups,
-            groupRegexes: groupRegexes
-        };
-
-        $.ajax({
-            url: '{{ url_for("analysis.update_groups") }}',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(data),
-            success: function(response) {
-                if (response.success) {
-                    alert(response.message);
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + response.message);
-                }
-            },
-            error: function() {
-                alert('An unexpected error occurred.');
-            }
-        });
-    }
-
-    function applyRegexToGroup(groupId, regexPattern) {
-        if (!regexPattern) {
-            return; // Do nothing if regex is empty
+        function updateGroupAssignment(column) {
+            const selectedGroups = [];
+            $(`.group-checkbox[data-column="${column}"]:checked`).each(function() {
+                selectedGroups.push(parseInt($(this).data('group')));
+            });
+            groupAssignments[column] = selectedGroups;
         }
 
-        $.ajax({
-            url: '{{ url_for("api.apply_regex_grouping") }}',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({
-                groupId: groupId,
-                regexPattern: regexPattern
-            }),
-            success: function(response) {
-                if (response.success) {
-                    groupAssignments = response.groupAssignments; // Update local groupAssignments
-                    updateAllGroupAssignments(); // Re-render checkboxes
-                } else {
-                    alert('Error applying regex: ' + response.message);
+        window.saveGroupAssignments = function() {
+            const nGroups = parseInt($('#nGroups').val());
+            for (let i = 1; i <= nGroups; i++) {
+                if (!groupNames[i]) {
+                    alert(`Please provide a name for Group ${i}`);
+                    return;
                 }
-            },
-            error: function() {
-                alert('An error occurred while applying regex.');
             }
-        });
-    }
 
-    $(document).ready(function() {
-        updateGroupInputs();
-    });
+            const data = {
+                groupAssignments: groupAssignments,
+                groupNames: groupNames,
+                nGroups: nGroups,
+                groupRegexes: groupRegexes
+            };
+
+            $.ajax({
+                url: '{{ url_for("analysis.update_groups") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.message);
+                        window.location.reload();
+                    } else {
+                        alert('Error: ' + response.message);
+                    }
+                },
+                error: function() {
+                    alert('An unexpected error occurred.');
+                }
+            });
+        }
+
+        function applyRegexToGroup(groupId, regexPattern) {
+            if (!regexPattern) {
+                return; // Do nothing if regex is empty
+            }
+
+            $.ajax({
+                url: '{{ url_for("api.apply_regex_grouping") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    groupId: groupId,
+                    regexPattern: regexPattern
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        groupAssignments = response.groupAssignments; // Update local groupAssignments
+                        updateAllGroupAssignments(); // Re-render checkboxes
+                    } else {
+                        alert('Error applying regex: ' + response.message);
+                    }
+                },
+                error: function() {
+                    alert('An error occurred while applying regex.');
+                }
+            });
+        }
+
+        // Register cleanup function
+        if (window.pageScriptRegistry) {
+            window.pageScriptRegistry.cleanup = cleanup;
+        }
+        
+        // Self-initialize
+        init();
+    })();
 </script>
 {% endblock %}

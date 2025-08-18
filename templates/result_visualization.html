@@ -93,16 +93,60 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-<script src="{{ url_for('static', filename='js/export.js') }}"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const volcanoPlotDiv = document.getElementById('volcanoPlot');
-    if (volcanoPlotDiv) {
-        const plotData = {{ volcano_plot_json|safe }};
-        Plotly.newPlot('volcanoPlot', plotData.data, plotData.layout, {responsive: true});
-    }
-});
+    (function() {
+
+        function init() {
+            function loadScript(src, callback) {
+                const existingScript = document.querySelector(`script[src="${src}"]`);
+                if (existingScript && existingScript.dataset.loaded === 'true') {
+                    if (callback) callback();
+                    return;
+                }
+                if (existingScript) {
+                    existingScript.addEventListener('load', () => { if (callback) callback(); });
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = src;
+                script.dataset.loaded = 'false';
+                script.onload = () => {
+                    script.dataset.loaded = 'true';
+                    if (callback) callback();
+                };
+                document.head.appendChild(script);
+            }
+
+            function initPageScripts() {
+                const volcanoPlotDiv = document.getElementById('volcanoPlot');
+                if (volcanoPlotDiv) {
+                    const plotData = {{ volcano_plot_json|safe }};
+                    Plotly.newPlot('volcanoPlot', plotData.data, plotData.layout, {responsive: true});
+                }
+                const clustergramDiv = document.getElementById('clustergramPlot');
+                if (clustergramDiv) {
+                    initClustergramPage();
+                }
+            }
+
+            loadScript("{{ url_for('static', filename='js/export.js') }}", function() {
+                loadScript("{{ url_for('static', filename='js/plots.js') }}", function() {
+                    setTimeout(initPageScripts, 50);
+                });
+            });
+        }
+
+        function cleanup() {
+            if (typeof cleanupClustergramPage === 'function') {
+                cleanupClustergramPage();
+            }
+        }
+
+        // Register the cleanup function with the global dispatcher
+        window.pageScriptRegistry.cleanup = cleanup;
+
+        // Self-initialize
+        init();
+    })();
 </script>
-<script src="{{ url_for('static', filename='js/plots.js') }}"></script>
 {% endblock %}

@@ -3,6 +3,7 @@
 {% block title %}Comparison - Metabolomic Data Analysis{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
 <style>
     .table-container {
         width: 100%;
@@ -16,6 +17,11 @@
         background-color: #17a2b8 !important; /* Bootstrap info color */
         color: white !important;
         transition: background-color 0.5s ease;
+    }
+    /* Make headers look clickable */
+    #original-table thead th, #processed-table thead th,
+    #original-table tbody td:first-child, #processed-table tbody td:first-child {
+        cursor: pointer;
     }
 </style>
 {% endblock %}
@@ -50,9 +56,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='comparison_original') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='comparison_original') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='comparison_original') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='csv', context='comparison_original') }}', 'comparison_original_data.csv')">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='tsv', context='comparison_original') }}', 'comparison_original_data.tsv')">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='excel', context='comparison_original') }}', 'comparison_original_data.xlsx')">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -82,9 +88,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='comparison_processed') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='comparison_processed') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='comparison_processed') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='csv', context='comparison_processed') }}', 'comparison_processed_data.csv')">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='tsv', context='comparison_processed') }}', 'comparison_processed_data.tsv')">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='excel', context='comparison_processed') }}', 'comparison_processed_data.xlsx')">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -103,94 +109,176 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
 <script>
-    let originalTable;
-    let processedTable;
+    (function() {
+        function downloadFile(url, filename) {
+            fetch(url)
+                .then(response => response.blob())
+                .then(blob => {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                })
+                .catch(e => console.error('Download failed:', e));
+        }
+        // Expose to global scope for inline onclick
+        window.downloadFile = downloadFile;
+        let originalTable;
+        let processedTable;
 
-    function initializeDataTables() {
-        if (originalTable) originalTable.destroy();
-        if (processedTable) processedTable.destroy();
-
-        originalTable = $('#original-table').DataTable({
-            "scrollX": true,
-            "paging": true,
-            "searching": true,
-            "ordering": true
-        });
-
-        processedTable = $('#processed-table').DataTable({
-            "scrollX": true,
-            "paging": true,
-            "searching": true,
-            "ordering": true
-        });
-    }
-
-    function loadComparisonData() {
-        let historyIndex = $('#historySelector').val();
-        
-        historyIndex = parseInt(historyIndex);
-        if (isNaN(historyIndex)) {
-            alert('Please select a valid processing step.');
-            return;
+        function initializeDataTables() {
+            const dtOptions = {
+                "scrollX": true,
+                "paging": false,
+                "searching": true,
+                "ordering": true, // Keep sorting enabled
+                "info": false
+            };
+            if ($.fn.DataTable.isDataTable('#original-table')) originalTable.destroy();
+            if ($.fn.DataTable.isDataTable('#processed-table')) processedTable.destroy();
+            originalTable = $('#original-table').DataTable(dtOptions);
+            processedTable = $('#processed-table').DataTable(dtOptions);
         }
 
-        const actualHistoryIndex = historyIndex - 1; // Adjust for 0-based indexing in Python
+        function syncScroll() {
+            const body1 = $('#original-table').closest('.dataTables_scrollBody');
+            const body2 = $('#processed-table').closest('.dataTables_scrollBody');
+            body1.on('scroll.sync', () => { body2.scrollTop(body1.scrollTop()).scrollLeft(body1.scrollLeft()); });
+            body2.on('scroll.sync', () => { body1.scrollTop(body2.scrollTop()).scrollLeft(body2.scrollLeft()); });
+        }
 
-        $.ajax({
-            url: '{{ url_for("api.get_comparison_data", history_index=0) }}'.replace('/0', '/' + actualHistoryIndex),
-            method: 'GET',
-            success: function(response) {
-                $('#processedTableContainer').html(response.processed_html);
-                $('#processedShape').text(`${response.processed_shape[0]} rows, ${response.processed_shape[1]} columns`);
-                initializeDataTables();
-            },
-            error: function() { alert('Error loading data.'); }
-        });
-    }
+        function cleanupSyncScroll() {
+            $('#original-table').closest('.dataTables_scrollBody').off('scroll.sync');
+            $('#processed-table').closest('.dataTables_scrollBody').off('scroll.sync');
+        }
 
-    function goToRow() {
-        const searchTerm = $('#rowSearchInput').val().trim();
-        if (!searchTerm) return;
+        window.loadComparisonData = function() {
+            let historyIndex = parseInt($('#historySelector').val());
+            if (isNaN(historyIndex)) { alert('Please select a valid processing step.'); return; }
+            const actualHistoryIndex = historyIndex - 1;
+            $.ajax({
+                url: '{{ url_for("api.get_comparison_data", history_index=0) }}'.replace('/0', '/' + actualHistoryIndex),
+                method: 'GET',
+                success: function(response) {
+                    $('#processedTableContainer').html(response.processed_html);
+                    $('#processedShape').text(`${response.processed_shape[0]} rows, ${response.processed_shape[1]} columns`);
+                    init(); // Re-initialize tables and listeners
+                },
+                error: function() { alert('Error loading data.'); }
+            });
+        }
 
-        ['#original-table', '#processed-table'].forEach(tableId => {
-            const table = $(tableId).DataTable();
-            table.rows().nodes().to$().removeClass('search-highlight');
-            
-            table.rows().every(function() {
-                const rowData = this.data();
-                if (String(rowData[0]).trim() === searchTerm) {
-                    const node = this.node();
-                    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    $(node).addClass('search-highlight');
-                    setTimeout(() => $(node).removeClass('search-highlight'), 2000);
+        function clearHighlights() {
+            $('#original-table, #processed-table').find('.highlight').removeClass('highlight');
+        }
+
+        window.goToRow = function(searchTerm) {
+            searchTerm = (searchTerm || $('#rowSearchInput').val()).trim();
+            if (!searchTerm) return;
+            clearHighlights();
+            let foundInAnyTable = false;
+
+            ['#original-table', '#processed-table'].forEach(tableId => {
+                if (!$.fn.DataTable.isDataTable(tableId)) return;
+                const table = $(tableId).DataTable();
+                const rowIndexes = table.rows().indexes();
+
+                for (let i = 0; i < rowIndexes.length; i++) {
+                    const row = table.row(rowIndexes[i]);
+                    const rowData = row.data();
+                    if (rowData && String(rowData[0]).trim().toLowerCase().includes(searchTerm.toLowerCase())) {
+                        const node = row.node();
+                        $(node).addClass('highlight');
+                        if (!foundInAnyTable) {
+                            node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                        foundInAnyTable = true;
+                        break; 
+                    }
                 }
             });
-        });
-    }
 
-    function goToColumn() {
-        const searchTerm = $('#colSearchInput').val().trim();
-        if (!searchTerm) return;
-
-        ['#original-table', '#processed-table'].forEach(tableId => {
-            const table = $(tableId).DataTable();
-            const colIndex = table.columns().header().to$().filter(function() {
-                return $(this).text().trim() === searchTerm;
-            }).index();
-
-            if (colIndex > -1) {
-                const header = $(table.column(colIndex).header());
-                header[0].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-                
-                $(table.column(colIndex).nodes()).addClass('search-highlight');
-                setTimeout(() => $(table.column(colIndex).nodes()).removeClass('search-highlight'), 2000);
+            if (!foundInAnyTable) {
+                alert('Row not found: ' + $('#rowSearchInput').val());
             }
-        });
-    }
+        }
 
-    $(document).ready(function() {
-        initializeDataTables();
-    });
+        window.goToColumn = function(searchTerm) {
+            searchTerm = (searchTerm || $('#colSearchInput').val()).trim();
+            if (!searchTerm) return;
+            clearHighlights();
+            let foundInAnyTable = false;
+
+            ['#original-table', '#processed-table'].forEach(tableId => {
+                if (!$.fn.DataTable.isDataTable(tableId)) return;
+                const table = $(tableId).DataTable();
+                const colIndexes = table.columns().indexes();
+
+                for (let i = 0; i < colIndexes.length; i++) {
+                    const col = table.column(colIndexes[i]);
+                    const header = $(col.header());
+                    if (header.text().trim().toLowerCase().includes(searchTerm.toLowerCase())) {
+                        $(header).addClass('highlight');
+                        $(col.nodes()).addClass('highlight');
+                        if (!foundInAnyTable) {
+                            const scrollBody = $(table.table().container()).find('.dataTables_scrollBody');
+                            const colNode = $(col.nodes()[0]);
+                            if (colNode.length) {
+                                const targetScrollLeft = scrollBody.scrollLeft() + colNode.position().left;
+                                scrollBody.animate({ scrollLeft: targetScrollLeft }, 300);
+                            }
+                        }
+                        foundInAnyTable = true;
+                        break;
+                    }
+                }
+            });
+
+            if (!foundInAnyTable) {
+                alert('Column not found: ' + $('#colSearchInput').val());
+            }
+        }
+
+        function init() {
+            initializeDataTables();
+            syncScroll();
+
+            // Use event delegation for clicks
+            $('#original-table, #processed-table').on('click.custom', 'thead th', function(e) {
+                if ($(e.target).is('span.DataTables_sort_icon')) return; // Allow sorting via icon
+                e.stopImmediatePropagation();
+                const headerText = $(this).text().trim();
+                if (headerText) window.goToColumn(headerText);
+            });
+
+            $('#original-table, #processed-table').on('click.custom', 'tbody tr', function() {
+                const table = $(this).closest('table').DataTable();
+                const rowData = table.row(this).data();
+                if (rowData && rowData[0]) {
+                    window.goToRow(rowData[0]);
+                }
+            });
+        }
+
+        function cleanup() {
+            cleanupSyncScroll();
+            $('#original-table, #processed-table').off('.custom');
+            if (originalTable) originalTable.destroy();
+            if (processedTable) processedTable.destroy();
+        }
+
+        if (window.pageScriptRegistry) {
+            window.pageScriptRegistry.cleanup = cleanup;
+        }
+        
+        $(document).ready(function() {
+            init();
+        });
+    })();
 </script>
 {% endblock %}

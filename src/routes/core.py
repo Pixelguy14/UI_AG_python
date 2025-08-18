@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, session, redirect, url_for, flash, send_file
+from flask import Blueprint, render_template, request, session, redirect, url_for, flash, Response
 from werkzeug.utils import secure_filename
 import os
 import io
@@ -136,12 +136,10 @@ def summary():
                 group_vector=session.get('group_vector'),
                 group_names=session.get('group_names')
             )
-            mean_values= mean_values.dropna()
-            if not mean_values.empty:
-                plots['mean_intensity_distribution'] = create_distribution_plot(
-                    mean_values,
-                    'Mean Intensity Distribution'
-                )
+            plots['all_columns_density'] = create_distribution_plot(
+                numeric_df,
+                'Distribution of each sample'
+            )
 
         numeric_df_for_boxplot = df_sample.select_dtypes(include=[np.number])
         if not numeric_df_for_boxplot.empty:
@@ -189,8 +187,10 @@ def reset():
 @core_bp.route('/export_dataframe/<string:format>/<string:context>')
 def export_dataframe(format, context):
     df = None
+    # Define contexts that may need metadata merged
     contexts_with_metadata = ['analysis', 'comparison_original', 'comparison_processed']
 
+    # Retrieve the correct dataframe from session based on context
     if context == 'main':
         df = session.get('df_main')
     elif context == 'analysis':
@@ -207,25 +207,27 @@ def export_dataframe(format, context):
         return "Invalid context", 400
 
     if df is None:
-        return "No data available to export", 404
+        flash('No data available to export for the selected context.', 'warning')
+        return redirect(request.referrer or url_for('core.index'))
 
     df = df.copy()
 
+    # Merge metadata if the context requires it
     if context in contexts_with_metadata:
-        metadata_df = None
-        if session.get('df_meta_thd') is not None and not session.get('df_meta_thd').empty:
-            metadata_df = session.get('df_meta_thd')
-        elif session.get('df_metadata') is not None and not session.get('df_metadata').empty:
-            metadata_df = session.get('df_metadata')
-
+        metadata_df = session.get('df_metadata')
         if metadata_df is not None and not metadata_df.empty:
+            # Ensure indices are compatible for merging
+            if df.index.name != metadata_df.index.name:
+                 metadata_df.index = df.index
             df = pd.concat([metadata_df, df], axis=1)
 
+    # Prepare the file for download
     output = io.BytesIO()
+    filename = f"{context}_data.csv"
+    mimetype = 'text/csv'
+
     if format == 'csv':
         df.to_csv(output, index=True)
-        mimetype = 'text/csv'
-        filename = f'{context}_data.csv'
     elif format == 'tsv':
         df.to_csv(output, sep='\t', index=True)
         mimetype = 'text/tab-separated-values'
@@ -240,4 +242,8 @@ def export_dataframe(format, context):
 
     output.seek(0)
 
-    return send_file(output, as_attachment=True, download_name=filename, mimetype=mimetype)
+    # Create a response and set the correct headers to trigger download
+    response = Response(output.getvalue(), mimetype=mimetype)
+    response.headers.set("Content-Disposition", f"attachment; filename={filename}")
+    return response
+

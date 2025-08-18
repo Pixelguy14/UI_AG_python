@@ -133,15 +133,39 @@
 
 {% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        {% if data_types_plot %}
-        try {
-            const dataTypesData = {{ data_types_plot|safe }};
-            Plotly.newPlot('dataTypesPlot', dataTypesData.data, dataTypesData.layout);
-        } catch (e) {
-            console.error('Error rendering data types plot:', e);
+    (function() {
+        function init() {
+            {% if data_types_plot %}
+            try {
+                const plotDiv = document.getElementById('dataTypesPlot');
+                if (plotDiv) {
+                    const dataTypesData = {{ data_types_plot|safe }};
+                    Plotly.newPlot(plotDiv, dataTypesData.data, dataTypesData.layout, { responsive: true });
+                }
+            } catch (e) {
+                console.error('Error rendering data types plot:', e);
+            }
+            {% endif %}
         }
-        {% endif %}
-    });
+
+        function cleanup() {
+            const plotDiv = document.getElementById('dataTypesPlot');
+            if (plotDiv && plotDiv.innerHTML) {
+                try {
+                    Plotly.purge(plotDiv);
+                } catch (e) {
+                    console.error('Error purging plot:', e);
+                }
+            }
+        }
+
+        // Register cleanup function
+        if (window.pageScriptRegistry) {
+            window.pageScriptRegistry.cleanup = cleanup;
+        }
+
+        // Self-initialize
+        init();
+    })();
 </script>
 {% endblock %}

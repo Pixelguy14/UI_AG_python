@@ -13,7 +13,7 @@ dataset_full_summary.csv
 dataset_summary.html
 src/missingpy/
 flask_session_cache/
-src/uploads
+uploads/
 src/functions/__pycache__/
 src/views/__pycache__/
 python3.10-config

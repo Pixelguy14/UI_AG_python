@@ -87,6 +87,9 @@ def medianImputed(df):
 # Random Forest imputation
 def missForestImputed(df, max_iter=10, n_estimators=100, random_state=None):
     df_imputed = df.copy() # Operate on a copy to ensure original is not modified
+    # Drop features with all missing values, as they are uninformative
+    df_imputed.dropna(axis=0, how='all', inplace=True)
+
     # MissForest can handle numerical ('np.number'), object (strings), and categorical dtypes directly.
     imputable_cols = df_imputed.select_dtypes(include=[np.number, 'object', 'category']).columns.tolist()
 
@@ -111,7 +114,9 @@ def missForestImputed(df, max_iter=10, n_estimators=100, random_state=None):
 
 # Singular Value Decomposition
 def svdImputed(df, n_components=5, max_iter=100, tol=1e-4):
-    df_imputed = df.copy().T
+    df_copy = df.copy()
+    df_copy.dropna(axis=0, how='all', inplace=True)
+    df_imputed = df_copy.T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
 
     if num_cols.empty:
@@ -155,8 +160,10 @@ def svdImputed(df, n_components=5, max_iter=100, tol=1e-4):
 
 # K nearest neighbours
 def knnImputed(df,n_neighbors=2):
+    df_copy = df.copy()
+    df_copy.dropna(axis=0, how='all', inplace=True)
     # Only alter numerical columns and columns with nan values
-    df_imputed = df.copy().T
+    df_imputed = df_copy.T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
 
     if num_cols.empty:
@@ -172,8 +179,10 @@ def knnImputed(df,n_neighbors=2):
 # NOT USING QRILC = Quantile Regression Imputation of Left-Censored data
 # MICE with bayesian ridge 
 def miceBayesianRidgeImputed(df, max_iter=20, random_state=None, initial_strategy='mean', tol=1e-3):
+    df_copy = df.copy()
+    df_copy.dropna(axis=0, how='all', inplace=True)
     # initial_strategy: 'mean', 'median', 'most_frequent', or 'constant'
-    df_imputed = df.copy().T
+    df_imputed = df_copy.T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
     
     if num_cols.empty:
@@ -198,8 +207,10 @@ def miceBayesianRidgeImputed(df, max_iter=20, random_state=None, initial_strateg
 
 # MICE with linear regresion
 def miceLinearRegressionImputed(df, max_iter=20, random_state=None, initial_strategy='mean', tol=1e-3):
+    df_copy = df.copy()
+    df_copy.dropna(axis=0, how='all', inplace=True)
     # initial_strategy: 'mean', 'median', 'most_frequent', or 'constant'
-    df_imputed = df.copy().T
+    df_imputed = df_copy.T
     num_cols = df_imputed.select_dtypes(include=np.number).columns
     
     if num_cols.empty:

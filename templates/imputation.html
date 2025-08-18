@@ -128,285 +128,230 @@
 
 {% block extra_js %}
 <script>
-    const methodDescriptions = {
-        'n_imputation': 'Replaces missing values with a constant (e.g., 0). Best for data missing not at random (MNAR) where values are below a detection limit.',
-        'half_minimum': 'A common heuristic for MNAR data, replacing missing values with half of the minimum observed value in the feature.',
-        'mean': 'Replaces missing values with the feature\'s mean. Suitable for data missing completely at random (MCAR).',
-        'median': 'Replaces missing values with the feature\'s median. More robust to outliers than mean imputation, also for MCAR data.',
-        'miss_forest': 'Uses Random Forest to predict and impute missing values. Effective for all missing data types (MCAR, MAR, MNAR).',
-        'svd': 'Uses Singular Value Decomposition to approximate the data matrix and impute values. Best for data missing at random (MAR).',
-        'knn': 'Imputes missing values using the average of the k-nearest neighbors. Suitable for MAR data.',
-        'mice_bayesian': 'Uses MICE with Bayesian Ridge regression. Good for complex, high-dimensional data, providing regularization.',
-        'mice_linear': 'Uses MICE with standard Linear Regression. Models each feature with missing values as a function of other features.'
-    };
+    (function() {
+        const methodDescriptions = {
+            'n_imputation': 'Replaces missing values with a constant (e.g., 0). Best for data missing not at random (MNAR) where values are below a detection limit.',
+            'half_minimum': 'A common heuristic for MNAR data, replacing missing values with half of the minimum observed value in the feature.',
+            'mean': 'Replaces missing values with the feature\'s mean. Suitable for data missing completely at random (MCAR).',
+            'median': 'Replaces missing values with the feature\'s median. More robust to outliers than mean imputation, also for MCAR data.',
+            'miss_forest': 'Uses Random Forest to predict and impute missing values. Effective for all missing data types (MCAR, MAR, MNAR).',
+            'svd': 'Uses Singular Value Decomposition to approximate the data matrix and impute values. Best for data missing at random (MAR).',
+            'knn': 'Imputes missing values using the average of the k-nearest neighbors. Suitable for MAR data.',
+            'mice_bayesian': 'Uses MICE with Bayesian Ridge regression. Good for complex, high-dimensional data, providing regularization.',
+            'mice_linear': 'Uses MICE with standard Linear Regression. Models each feature with missing values as a function of other features.'
+        };
 
-    function showFlashMessage(message, category) {
-        const flashDiv = $('#imputation-flash-messages');
-        const alertHtml = `
-            <div class="alert alert-${category} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>`;
-        flashDiv.html(alertHtml);
-    }
-
-    function updateImputationOptions() {
-        const method = $('#imputationMethod').val();
-        $('#descriptionText').text(methodDescriptions[method]);
-        let paramsHtml = '';
-        if (method === 'n_imputation') {
-            paramsHtml = `
-            <div class="mb-3">
-                <label for="nValue" class="form-label">N Value:</label>
-                <input type="number" class="form-control" id="nValue" value="0" step="0.01">
-            </div>`;
-        } else if (method === 'miss_forest') {
-            paramsHtml = `
-            <div class="mb-3">
-                <label for="maxIter" class="form-label">Max Iterations:</label>
-                <input type="number" class="form-control" id="maxIter" value="10" min="1">
-            </div>
-            <div class="mb-3">
-                <label for="nEstimators" class="form-label">N Estimators:</label>
-                <input type="number" class="form-control" id="nEstimators" value="100" min="10">
-            </div>`;
-        } else if (method === 'svd') {
-            paramsHtml = `
-            <div class="mb-3">
-                <label for="nComponents" class="form-label">N Components:</label>
-                <input type="number" class="form-control" id="nComponents" value="5" min="1">
-            </div>`;
-        } else if (method === 'knn') {
-            paramsHtml = `
-            <div class="mb-3">
-                <label for="nNeighbors" class="form-label">N Neighbors:</label>
-                <input type="number" class="form-control" id="nNeighbors" value="2" min="1">
-            </div>`;
-        } else if (method === 'mice_bayesian' || method === 'mice_linear') {
-            paramsHtml = `
-            <div class="mb-3">
-                <label for="miceMaxIter" class="form-label">Max Iterations:</label>
-                <input type="number" class="form-control" id="miceMaxIter" value="20" min="1">
-            </div>`;
+        function showFlashMessage(message, category) {
+            const flashDiv = $('#imputation-flash-messages');
+            const alertHtml = `
+                <div class="alert alert-${category} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`;
+            flashDiv.html(alertHtml);
         }
-        $('#methodParameters').html(paramsHtml);
-    }
 
-    function updateProcessingSteps(steps) {
-        const stepsList = $('#processingSteps');
-        stepsList.empty();
-        steps.forEach(function(step) {
-            const listItem = `<li class="list-group-item"><i class="fas ${step.icon} ${step.color} me-2"></i>${step.message}</li>`;
-            stepsList.append(listItem);
-        });
-    }
-
-    function applyThreshold() {
-        const threshold = $('#thresholdSlider').val();
-        const btn = $('#applyThresholdBtn');
-        const progress = $('#thresholdProgress');
-        
-        progress.show();
-        btn.prop('disabled', true);
-
-        $.ajax({
-            url: '{{ url_for("processing.threshold") }}',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({threshold: parseFloat(threshold)}),
-            success: function(response) {
-                showFlashMessage(response.message, response.message_category);
-                if (response.success) {
-                    $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
-                    updateProcessingSteps(response.steps);
-                    
-                    // Update heatmap
-                    if (response.missing_heatmap) {
-                        try {
-                            const missingHeatmapData = JSON.parse(response.missing_heatmap);
-                            Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
-                        } catch (e) {
-                            console.error('Error rendering missing heatmap plot after thresholding:', e);
-                        }
-                    }
-
-                    // Update intensity comparison plot
-                    if (response.intensity_comparison_plot) {
-                        try {
-                            const intensityPlotData = JSON.parse(response.intensity_comparison_plot);
-                            Plotly.newPlot('intensityComparisonPlot', intensityPlotData.data, intensityPlotData.layout);
-                        } catch (e) {
-                            console.error('Error rendering intensity comparison plot:', e);
-                        }
-                    }
-                }
-            },
-            error: function() {
-                showFlashMessage('An unexpected error occurred during thresholding.', 'danger');
-            },
-            complete: function() {
-                progress.hide();
-                btn.prop('disabled', false);
-            }
-        });
-    }
-
-    function applyImputation() {
-        const method = $('#imputationMethod').val();
-        const btn = $('#applyImputationBtn');
-        const progress = $('#imputationProgress');
-
-        progress.show();
-        btn.prop('disabled', true);
-        
-        let params = {};
-
-        if (method === 'n_imputation') params.n_value = parseFloat($('#nValue').val());
-        if (method === 'miss_forest') {
-            params.max_iter = parseInt($('#maxIter').val());
-            params.n_estimators = parseInt($('#nEstimators').val());
-        }
-        if (method === 'svd') params.n_components = parseInt($('#nComponents').val());
-        if (method === 'knn') params.n_neighbors = parseInt($('#nNeighbors').val());
-        if (method === 'mice_bayesian' || method === 'mice_linear') params.max_iter = parseInt($('#miceMaxIter').val());
-
-        $.ajax({
-            url: '{{ url_for("processing.apply_imputation") }}',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({method: method, params: params}),
-            success: function(response) {
-                // console.log('AJAX Success:', response);
-                showFlashMessage(response.message, response.message_category);
-                if (response.success) {
-                    $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
-                    updateProcessingSteps(response.steps);
-                    
-                    // Update heatmap
-                    if (response.missing_heatmap) {
-                        try {
-                            const missingHeatmapData = JSON.parse(response.missing_heatmap);
-                            Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
-                        } catch (e) {
-                            console.error('Error rendering missing heatmap plot after imputation:', e);
-                        }
-                    }
-
-                    // Update intensity comparison plot
-                    if (response.intensity_comparison_plot) {
-                        try {
-                            const intensityPlotData = JSON.parse(response.intensity_comparison_plot);
-                            Plotly.newPlot('intensityComparisonPlot', intensityPlotData.data, intensityPlotData.layout);
-                        } catch (e) {
-                            console.error('Error rendering intensity comparison plot:', e);
-                        }
-                    }
-                }
-            },
-            error: function(xhr, status, error) {
-                console.error('AJAX Error:', status, error, xhr);
-                showFlashMessage('An unexpected error occurred during imputation.', 'danger');
-            },
-            complete: function() {
-                // console.log('AJAX Complete.');
-                progress.hide();
-                btn.prop('disabled', false);
-            }
-        });
-    }
-
-    function resetData() {
-        if (confirm('Are you sure you want to undo the last processing step?')) {
-            $.ajax({
-                url: '{{ url_for("processing.reset_sample_step") }}',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({context: 'imputation'}),
-                success: function(response) {
-                    if (response.success) {
-                        showFlashMessage(response.message, 'success');
-                        $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
-                        updateProcessingSteps(response.steps);
-                        // Re-render heatmap after reset
-                        if (response.missing_heatmap) {
-                            const heatmapData = JSON.parse(response.missing_heatmap);
-                            Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout);
-                        }
-                        // Re-render intensity comparison plot after reset
-                        if (response.intensity_comparison_plot) {
-                            const intensityComparisonPlot = JSON.parse(response.intensity_comparison_plot);
-                            Plotly.newPlot('intensityComparisonPlot', intensityComparisonPlot.data, intensityComparisonPlot.layout)
-                        }
-                    } else {
-                        showFlashMessage(response.error, 'danger');
-                    }
-                },
-                error: function() {
-                    showFlashMessage('An error occurred while resetting data.', 'danger');
-                }
+        function updateProcessingSteps(steps) {
+            const stepsList = $('#processingSteps');
+            stepsList.empty();
+            steps.forEach(function(step) {
+                const listItem = `<li class="list-group-item"><i class="fas ${step.icon} ${step.color} me-2"></i>${step.message}</li>`;
+                stepsList.append(listItem);
             });
         }
-    }
 
-    $(document).ready(function() {
-        $('#thresholdSlider').on('input', function() {
-            $('#thresholdValue').text($(this).val());
-        });
-        updateImputationOptions();
+        function renderPlots(heatmapData, intensityData) {
+            if (heatmapData) {
+                try {
+                    Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout, { responsive: true });
+                } catch (e) { console.error('Error rendering missing heatmap plot:', e); }
+            }
+            if (intensityData) {
+                try {
+                    Plotly.newPlot('intensityComparisonPlot', intensityData.data, intensityData.layout, { responsive: true });
+                } catch (e) { console.error('Error rendering intensity comparison plot:', e); }
+            }
+        }
 
-        $('#replaceZerosBtn').on('click', function() {
-            const btn = $(this);
-            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Replacing...');
+        window.updateImputationOptions = function() {
+            const method = $('#imputationMethod').val();
+            $('#descriptionText').text(methodDescriptions[method]);
+            let paramsHtml = '';
+            if (method === 'n_imputation') {
+                paramsHtml = `
+                <div class="mb-3">
+                    <label for="nValue" class="form-label">N Value:</label>
+                    <input type="number" class="form-control" id="nValue" value="0" step="0.01">
+                </div>`;
+            } else if (method === 'miss_forest') {
+                paramsHtml = `
+                <div class="mb-3">
+                    <label for="maxIter" class="form-label">Max Iterations:</label>
+                    <input type="number" class="form-control" id="maxIter" value="10" min="1">
+                </div>
+                <div class="mb-3">
+                    <label for="nEstimators" class="form-label">N Estimators:</label>
+                    <input type="number" class="form-control" id="nEstimators" value="100" min="10">
+                </div>`;
+            } else if (method === 'svd') {
+                paramsHtml = `
+                <div class="mb-3">
+                    <label for="nComponents" class="form-label">N Components:</label>
+                    <input type="number" class="form-control" id="nComponents" value="5" min="1">
+                </div>`;
+            } else if (method === 'knn') {
+                paramsHtml = `
+                <div class="mb-3">
+                    <label for="nNeighbors" class="form-label">N Neighbors:</label>
+                    <input type="number" class="form-control" id="nNeighbors" value="2" min="1">
+                </div>`;
+            } else if (method === 'mice_bayesian' || method === 'mice_linear') {
+                paramsHtml = `
+                <div class="mb-3">
+                    <label for="miceMaxIter" class="form-label">Max Iterations:</label>
+                    <input type="number" class="form-control" id="miceMaxIter" value="100" min="1">
+                </div>`;
+            }
+            $('#methodParameters').html(paramsHtml);
+        }
+
+        window.applyThreshold = function() {
+            const threshold = $('#thresholdSlider').val();
+            const btn = $('#applyThresholdBtn');
+            const progress = $('#thresholdProgress');
+            
+            progress.show();
+            btn.prop('disabled', true);
 
             $.ajax({
-                url: '{{ url_for("processing.replace_zeros") }}',
+                url: '{{ url_for("processing.threshold") }}',
                 method: 'POST',
                 contentType: 'application/json',
+                data: JSON.stringify({threshold: parseFloat(threshold)}),
                 success: function(response) {
+                    showFlashMessage(response.message, response.message_category);
                     if (response.success) {
-                        showFlashMessage(response.message, 'success');
                         $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                         updateProcessingSteps(response.steps);
-                        if (response.missing_heatmap) {
-                            const heatmapData = JSON.parse(response.missing_heatmap);
-                            Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout);
-                        }
-                        if (response.intensity_comparison_plot) {
-                            const intensityComparisonPlot = JSON.parse(response.intensity_comparison_plot);
-                            Plotly.newPlot('intensityComparisonPlot', intensityComparisonPlot.data, intensityComparisonPlot.layout)
-                        }
-                    } else {
-                        showFlashMessage(response.error, 'danger');
+                        renderPlots(response.missing_heatmap ? JSON.parse(response.missing_heatmap) : null, 
+                                    response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
                     }
                 },
-                error: function() {
-                    showFlashMessage('An error occurred while replacing zeros.', 'danger');
-                },
-                complete: function() {
-                    btn.prop('disabled', false).html('<i class="fas fa-eraser me-2"></i>Replace All Zeros with NaN');
-                }
+                error: function() { showFlashMessage('An unexpected error occurred during thresholding.', 'danger'); },
+                complete: function() { progress.hide(); btn.prop('disabled', false); }
             });
-        });
-    });
+        }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Render initial plots
-        {% if plots.missing_heatmap %}
-        try {
-            const missingHeatmapData = {{ plots.missing_heatmap|safe }};
-            Plotly.newPlot('missingHeatmapPlot', missingHeatmapData.data, missingHeatmapData.layout);
-        } catch (e) {
-            console.error('Error rendering missing heatmap plot:', e);
+        window.applyImputation = function() {
+            const method = $('#imputationMethod').val();
+            const btn = $('#applyImputationBtn');
+            const progress = $('#imputationProgress');
+
+            progress.show();
+            btn.prop('disabled', true);
+            
+            let params = {};
+            if (method === 'n_imputation') params.n_value = parseFloat($('#nValue').val());
+            if (method === 'miss_forest') {
+                params.max_iter = parseInt($('#maxIter').val());
+                params.n_estimators = parseInt($('#nEstimators').val());
+            }
+            if (method === 'svd') params.n_components = parseInt($('#nComponents').val());
+            if (method === 'knn') params.n_neighbors = parseInt($('#nNeighbors').val());
+            if (method === 'mice_bayesian' || method === 'mice_linear') params.max_iter = parseInt($('#miceMaxIter').val());
+
+            $.ajax({
+                url: '{{ url_for("processing.apply_imputation") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({method: method, params: params}),
+                success: function(response) {
+                    showFlashMessage(response.message, response.message_category);
+                    if (response.success) {
+                        $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                        updateProcessingSteps(response.steps);
+                        renderPlots(response.missing_heatmap ? JSON.parse(response.missing_heatmap) : null, 
+                                    response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
+                    }
+                },
+                error: function() { showFlashMessage('An unexpected error occurred during imputation.', 'danger'); },
+                complete: function() { progress.hide(); btn.prop('disabled', false); }
+            });
         }
-        {% endif %}
-        {% if plots.intensity_comparison_plot %}
-        try {
-            const intensityComparisonPlot = {{ plots.intensity_comparison_plot|safe }};
-            Plotly.newPlot('intensityComparisonPlot', intensityComparisonPlot.data, intensityComparisonPlot.layout);
-        } catch (e) {
-            console.error('Error rendering missing heatmap plot:', e);
+
+        window.resetData = function() {
+            if (confirm('Are you sure you want to undo the last processing step?')) {
+                $.ajax({
+                    url: '{{ url_for("processing.reset_sample_step") }}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({context: 'imputation'}),
+                    success: function(response) {
+                        if (response.success) {
+                            showFlashMessage(response.message, 'success');
+                            $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                            updateProcessingSteps(response.steps);
+                            renderPlots(response.missing_heatmap ? JSON.parse(response.missing_heatmap) : null, 
+                                        response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
+                        } else {
+                            showFlashMessage(response.error, 'danger');
+                        }
+                    },
+                    error: function() { showFlashMessage('An error occurred while resetting data.', 'danger'); }
+                });
+            }
         }
-        {% endif %}
-    });
+
+        function init() {
+            $('#thresholdSlider').on('input', function() {
+                $('#thresholdValue').text($(this).val());
+            });
+            window.updateImputationOptions();
+
+            $('#replaceZerosBtn').on('click', function() {
+                const btn = $(this);
+                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Replacing...');
+
+                $.ajax({
+                    url: '{{ url_for("processing.replace_zeros") }}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    success: function(response) {
+                        if (response.success) {
+                            showFlashMessage(response.message, 'success');
+                            $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
+                            updateProcessingSteps(response.steps);
+                            renderPlots(response.missing_heatmap ? JSON.parse(response.missing_heatmap) : null, 
+                                        response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
+                        } else {
+                            showFlashMessage(response.error, 'danger');
+                        }
+                    },
+                    error: function() { showFlashMessage('An error occurred while replacing zeros.', 'danger'); },
+                    complete: function() { btn.prop('disabled', false).html('<i class="fas fa-eraser me-2"></i>Replace All Zeros with NaN'); }
+                });
+            });
+
+            // Render initial plots
+            renderPlots({{ plots.missing_heatmap|default('null')|safe }},
+                        {{ plots.intensity_comparison_plot|default('null')|safe }});
+        }
+
+        function cleanup() {
+            $('#thresholdSlider').off('input');
+            $('#replaceZerosBtn').off('click');
+            
+            const plot1 = document.getElementById('missingHeatmapPlot');
+            if (plot1 && plot1.innerHTML) Plotly.purge(plot1);
+
+            const plot2 = document.getElementById('intensityComparisonPlot');
+            if (plot2 && plot2.innerHTML) Plotly.purge(plot2);
+        }
+
+        if (window.pageScriptRegistry) {
+            window.pageScriptRegistry.cleanup = cleanup;
+        }
+        init();
+    })();
 </script>
 {% endblock %}

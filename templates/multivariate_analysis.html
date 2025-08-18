@@ -105,79 +105,91 @@
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/export.js') }}"></script>
 <script>
-function loadPlots() {
-    let index1 = $('#plotSelector1').val();
-    let index2 = $('#plotSelector2').val();
-    const plotType = $('#plotType').val();
+    (function() {
+        function fetchAndRenderPlot(historyIndex, containerId, plotType) {
+            let url;
+            if (plotType === 'pca') url = `{{ url_for("api.get_pca_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
+            else if (plotType === 'plsda') url = `{{ url_for("api.get_plsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
+            else if (plotType === 'oplsda') url = `{{ url_for("api.get_oplsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
 
-    // Parse as integers and handle NaN
-    index1 = parseInt(index1);
-    index2 = parseInt(index2);
+            $.ajax({
+                url: url,
+                method: 'GET',
+                success: function(response) {
+                    if (response.plot) {
+                        const plotData = JSON.parse(response.plot);
+                        Plotly.newPlot(containerId, plotData.data, plotData.layout, { responsive: true });
+                    } else {
+                        $(`#${containerId}`).html(`<div class="alert alert-warning">Plot not available.</div>`);
+                    }
+                },
+                error: () => $(`#${containerId}`).html(`<div class="alert alert-danger">Error loading plot.</div>`)
+            });
+        }
 
-    if (isNaN(index1) || isNaN(index2)) {
-        // Handle case where no valid option is selected (e.g., df_history is empty)
-        $('#plotContainer1').html('<div class="alert alert-warning">Please select valid processing steps for comparison.</div>');
-        $('#plotContainer2').html('<div class="alert alert-warning">Please select valid processing steps for comparison.</div>');
-        return;
-    }
+        function fetchAndRenderHca() {
+            const payload = {
+                distance_metric: $('input[name="distance_metric"]:checked').val(),
+                linkage_method: $('input[name="linkage_method"]:checked').val()
+            };
 
-    $('#plotTitle1').text($('#plotSelector1 option:selected').text() + ' - ' + plotType.toUpperCase());
-    $('#plotTitle2').text($('#plotSelector2 option:selected').text() + ' - ' + plotType.toUpperCase());
+            $.ajax({
+                url: '{{ url_for("api.get_hca_plot") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(payload),
+                success: function(response) {
+                    if (response.plot) {
+                        const plotData = JSON.parse(response.plot);
+                        Plotly.newPlot('hcaPlotContainer', plotData.data, plotData.layout, { responsive: true });
+                    } else {
+                        $('#hcaPlotContainer').html('<div class="alert alert-warning">HCA plot not available.</div>');
+                    }
+                },
+                error: () => $('#hcaPlotContainer').html('<div class="alert alert-danger">Error loading HCA plot.</div>')
+            });
+        }
 
-    fetchAndRenderPlot(index1, 'plotContainer1', plotType);
-    fetchAndRenderPlot(index2, 'plotContainer2', plotType);
-    fetchAndRenderHca();
-}
+        window.loadPlots = function() {
+            let index1 = parseInt($('#plotSelector1').val());
+            let index2 = parseInt($('#plotSelector2').val());
+            const plotType = $('#plotType').val();
 
-function fetchAndRenderPlot(historyIndex, containerId, plotType) {
-    let url;
-    // Use the .replace('/0', '/' + actualHistoryIndex) pattern
-    if (plotType === 'pca') url = `{{ url_for("api.get_pca_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
-    else if (plotType === 'plsda') url = `{{ url_for("api.get_plsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
-    else if (plotType === 'oplsda') url = `{{ url_for("api.get_oplsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
-
-    $.ajax({
-        url: url,
-        method: 'GET',
-        success: function(response) {
-            if (response.plot) {
-                const plotData = JSON.parse(response.plot);
-                Plotly.newPlot(containerId, plotData.data, plotData.layout);
-            } else {
-                $(`#${containerId}`).html(`<div class="alert alert-warning">Plot not available.</div>`);
+            if (isNaN(index1) || isNaN(index2)) {
+                $('#plotContainer1').html('<div class="alert alert-warning">Please select valid processing steps.</div>');
+                $('#plotContainer2').html('<div class="alert alert-warning">Please select valid processing steps.</div>');
+                return;
             }
-        },
-        error: () => $(`#${containerId}`).html(`<div class="alert alert-danger">Error loading plot.</div>`)
-    });
-}
 
-function fetchAndRenderHca() {
-    const payload = {
-        distance_metric: $('input[name="distance_metric"]:checked').val(),
-        linkage_method: $('input[name="linkage_method"]:checked').val()
-    };
+            $('#plotTitle1').text($('#plotSelector1 option:selected').text() + ' - ' + plotType.toUpperCase());
+            $('#plotTitle2').text($('#plotSelector2 option:selected').text() + ' - ' + plotType.toUpperCase());
 
-    $.ajax({
-        url: '{{ url_for("api.get_hca_plot") }}',
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify(payload),
-        success: function(response) {
-            if (response.plot) {
-                const plotData = JSON.parse(response.plot);
-                Plotly.newPlot('hcaPlotContainer', plotData.data, plotData.layout);
-            } else {
-                $('#hcaPlotContainer').html('<div class="alert alert-warning">HCA plot not available.</div>');
-            }
-        },
-        error: () => $('#hcaPlotContainer').html('<div class="alert alert-danger">Error loading HCA plot.</div>')
-    });
-}
+            fetchAndRenderPlot(index1, 'plotContainer1', plotType);
+            fetchAndRenderPlot(index2, 'plotContainer2', plotType);
+            fetchAndRenderHca();
+        }
 
-$(document).ready(function() {
-    loadPlots();
-    $('input[name="distance_metric"], input[name="linkage_method"]').on('change', fetchAndRenderHca);
-    $('#runPermanovaBtn').on('click', runPermanova);
-});
+        function init() {
+            loadPlots();
+            $('input[name="distance_metric"], input[name="linkage_method"]').on('change.mva', fetchAndRenderHca);
+        }
+
+        function cleanup() {
+            $('input[name="distance_metric"], input[name="linkage_method"]').off('.mva');
+            const plotIds = ['plotContainer1', 'plotContainer2', 'hcaPlotContainer'];
+            plotIds.forEach(id => {
+                const plotDiv = document.getElementById(id);
+                if (plotDiv && plotDiv.innerHTML) {
+                    Plotly.purge(plotDiv);
+                }
+            });
+        }
+
+        if (window.pageScriptRegistry) {
+            window.pageScriptRegistry.cleanup = cleanup;
+        }
+
+        $(document).ready(init);
+    })();
 </script>
 {% endblock %}
