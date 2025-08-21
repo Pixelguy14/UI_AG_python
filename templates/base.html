@@ -14,25 +14,136 @@
     <script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
     
     <style>
-        /* HTMX Enhancement: Provides feedback during background requests */
+        /* 1. Improved Loading States */
         .htmx-request {
-            opacity: 0.7;
+            position: relative;
+            opacity: 0.85;
             transition: opacity 300ms ease-in-out;
+        }
+
+        .htmx-request::after {
+            content: '';
+            position: fixed; /* Changed to fixed for better positioning */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(2, 138, 112, 0.2);
+            border-top: 3px solid var(--color-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            z-index: var(--z-index-loading);
+            pointer-events: none;
+        }
+
+        /* Add a backdrop for loading states */
+        .htmx-request::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            z-index: 9998;
+            pointer-events: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         /* Smooth transitions for new content */
         .htmx-swapping {
             opacity: 0;
-            transition: opacity 400ms ease-in-out;
+            transform: translateY(10px);
+            transition: opacity 400ms ease-in-out, transform 400ms ease-in-out;
+        }
+
+        .htmx-settling {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Enhanced card animations */
+        .animated-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateY(0);
+        }
+
+        .animated-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.15) !important;
+        }
+
+        /* Fade-in animation for content */
+        .fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Pulse animation for interactive elements */
+        .pulse-on-hover {
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .pulse-on-hover:hover {
+            transform: scale(1.05);
+        }
+
+        /* Loading skeleton animation */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Interactive button enhancements */
+        .btn-enhanced {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .btn-enhanced::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn-enhanced:hover::before {
+            left: 100%;
         }
 
         :root {
             /* Color Palette */
             --color-primary: #028A70; /* Darkened teal for WCAG compliance */
-            --color-secondary: #5a5a5a; /* A neutral secondary color */
+            --color-secondary: #5a5a5a; /* Neutral secondary color */
             --color-text: #212529;      /* Standard dark text for readability */
             --color-background: #F8F9FA;/* Light background */
-            --color-white: #FFFFFF;
+            --color-white: #ffffffff;
 
             /* Accent Colors */
             --color-accent-purple: #C177F2;
@@ -41,7 +152,9 @@
             --color-accent-cyan: #08DF8F;
 
             /* Status Colors */
-            --color-danger: #d9534f; /* A standard, accessible red */
+            --color-danger: #d9534f;
+            --color-warning: #C177F2;
+            --color-info: #08DF8F;
         }
         
         body {
@@ -201,16 +314,29 @@
         .progress-bar {
             background-color: var(--color-accent-cyan);
         }
+
+        /* Enable dropdown on hover for desktop */
+        @media (min-width: 992px) { /* Bootstrap's lg breakpoint */
+            /* For dropdowns in the main navbar */
+            .navbar-expand-lg .navbar-nav .dropdown:hover > .dropdown-menu {
+                display: block;
+                margin-top: 0;
+            }
+            /* For button dropdowns in the page content */
+            .btn-group:hover > .dropdown-menu {
+                display: block;
+                margin-top: 0;
+            }
+        }
     </style>
     
     {% block extra_css %}{% endblock %}
 </head>
-<!--<body hx-boost="true" hx-history="false">-->
 <body hx-boost="true">
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark" style="margin-bottom:20px">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('core.index') }}">
+            <a class="navbar-brand pulse-on-hover" href="{{ url_for('core.index') }}">
                 <i class="fas fa-dna me-2"></i>Metabolomic GUI
             </a>
             
@@ -289,20 +415,8 @@
             </div>
         </div>
     </nav>
-
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-            <div class="container-fluid mt-3">
-                {% for message in messages %}
-                    <div class="alert alert-info alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
+    <!-- Toast Notification-->
+    <div id="toast-container" class="position-fixed top-0.1 end-0 p-3" style="z-index: 1100"></div>
 
     <!-- Main Content -->
     <main>
@@ -332,10 +446,40 @@
           }
       });
 
+      document.body.addEventListener('htmx:beforeRequest', function(evt) {
+          // Add loading class to the triggering element
+          evt.detail.elt.classList.add('htmx-request');
+      });
+
+      document.body.addEventListener('htmx:afterRequest', function(evt) {
+          // Remove loading class from the triggering element
+          evt.detail.elt.classList.remove('htmx-request');
+      });
+
+      document.body.addEventListener('htmx:beforeSwap', function(evt) {
+          // Add fade-out animation before swapping
+          if (evt.detail.target) {
+              evt.detail.target.style.opacity = '0';
+              evt.detail.target.style.transform = 'translateY(-10px)';
+          }
+      });
+
+      document.body.addEventListener('htmx:afterSwap', function(evt) {
+          // Add fade-in animation after swapping
+          if (evt.detail.target) {
+              evt.detail.target.style.opacity = '1';
+              evt.detail.target.style.transform = 'translateY(0)';
+              evt.detail.target.classList.add('fade-in');
+          }
+      });
+
       // --- HTMX BOOTSTRAP RE-INITIALIZER (Comprehensive) ---
       htmx.onLoad(function(content) {
+        // By querying the whole document after any swap, we ensure all components
+        // are properly initialized, regardless of what content was loaded.
+
         // Re-initialize Dropdowns
-        var dropdownToggles = content.querySelectorAll('[data-bs-toggle="dropdown"]');
+        var dropdownToggles = document.querySelectorAll('[data-bs-toggle="dropdown"]');
         dropdownToggles.forEach(function(toggle) {
             var instance = bootstrap.Dropdown.getInstance(toggle);
             if (instance) {
@@ -345,16 +489,12 @@
         });
 
         // Re-initialize Collapses (for the mobile navbar)
-        var collapseToggles = content.querySelectorAll('[data-bs-toggle="collapse"]');
+        var collapseToggles = document.querySelectorAll('[data-bs-toggle="collapse"]');
         collapseToggles.forEach(function(toggle) {
             var targetSelector = toggle.getAttribute('data-bs-target');
             if (!targetSelector) return;
 
-            var targetElement = content.querySelector(targetSelector);
-            // The target element might not be in the swapped content, so check the whole document as a fallback
-            if (!targetElement) {
-                targetElement = document.querySelector(targetSelector);
-            }
+            var targetElement = document.querySelector(targetSelector);
             if (!targetElement) return;
             
             var instance = bootstrap.Collapse.getInstance(targetElement);
@@ -363,8 +503,88 @@
             }
             new bootstrap.Collapse(targetElement, { toggle: false });
         });
+
+        // Re-initialize Tooltips
+        var tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        var tooltipList = [...tooltipTriggerList].map(function (tooltipTriggerEl) {
+            // Dispose of existing tooltips before creating new ones
+            var instance = bootstrap.Tooltip.getInstance(tooltipTriggerEl);
+            if(instance) {
+                instance.dispose();
+            }
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
       });
+
+      // --- GLOBAL TOAST NOTIFICATION HANDLER ---
+      function showToast(message, category = 'info') {
+          const toastContainer = document.getElementById('toast-container');
+          if (!toastContainer) return;
+
+          const toastId = 'toast-' + Date.now();
+          const icons = {
+              success: 'fa-check-circle',
+              danger: 'fa-times-circle',
+              warning: 'fa-exclamation-triangle',
+              info: 'fa-info-circle'
+          };
+          const icon = icons[category] || icons.info;
+
+          const toastHtml = `
+              <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+                  <div class="toast-header bg-${category} text-white">
+                      <i class="fas ${icon} me-2"></i>
+                      <strong class="me-auto">Notification</strong>
+                      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+                  </div>
+                  <div class="toast-body">
+                      ${message}
+                  </div>
+              </div>
+          `;
+
+          toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+          
+          const toastElement = document.getElementById(toastId);
+          const toast = new bootstrap.Toast(toastElement);
+
+          toastElement.addEventListener('hidden.bs.toast', function () {
+              toastElement.remove();
+          });
+
+          toast.show();
+      }
+      // Make it globally accessible
+      window.showToast = showToast;
     </script>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <script>
+            (function() {
+                let messages = {{ messages|tojson }};
+
+                function showFlashedToasts() {
+                    if (!messages) return;
+                    for (const [category, message] of messages) {
+                        window.showToast(message, category);
+                    }
+                    messages = null; // Prevent re-showing
+                }
+
+                // For initial page load
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', showFlashedToasts, { once: true });
+                } else {
+                    showFlashedToasts();
+                }
+
+                // For HTMX swaps
+                document.body.addEventListener('htmx:afterSwap', showFlashedToasts, { once: true });
+            })();
+        </script>
+    {% endif %}
+{% endwith %}
     
     {% block extra_js %}{% endblock %}
 </body>

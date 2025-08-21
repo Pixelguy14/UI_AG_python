@@ -3,15 +3,12 @@
 {% block title %}Imputation - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Flash Message Placeholder -->
-    <div id="imputation-flash-messages"></div>
-
+<div class="container-fluid fade-in">
     <div class="row">
         <!-- Controls -->
         <div class="col-lg-4">
             <!-- Thresholding -->
-            <div class="card mb-4">
+            <div class="card animated-card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-filter me-2"></i>Thresholding</h5>
                 </div>
@@ -24,20 +21,20 @@
                     <div class="progress mb-3" id="thresholdProgress" style="display: none;">
                         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                     </div>
-                    <button type="button" id="applyThresholdBtn" class="btn btn-success w-100" onclick="applyThreshold()">
+                    <button type="button" id="applyThresholdBtn" class="btn btn-success w-100 btn-enhanced pulse-on-hover" onclick="applyThreshold()">
                         <i class="fas fa-check me-2"></i>Apply Thresholding
                     </button>
                 </div>
             </div>
             
             <!-- Data Cleaning -->
-            <div class="card mb-4">
+            <div class="card animated-card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-broom me-2"></i>Data Cleaning</h5>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">Use this utility to handle specific data cleaning tasks.</p>
-                    <button type="button" id="replaceZerosBtn" class="btn btn-warning w-100">
+                    <button type="button" id="replaceZerosBtn" class="btn btn-warning w-100 btn-enhanced pulse-on-hover">
                         <i class="fas fa-eraser me-2"></i>Replace All Zeros with NaN
                     </button>
                     <small class="form-text text-muted mt-2 d-block">This is useful if zeros in your data represent missing values and you need to mark them for imputation.</small>
@@ -45,7 +42,7 @@
             </div>
 
             <!-- Imputation Methods -->
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Imputation Methods</h5>
                 </div>
@@ -69,7 +66,7 @@
                     <div class="progress mt-3" id="imputationProgress" style="display: none;">
                         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                     </div>
-                    <button type="button" id="applyImputationBtn" class="btn btn-primary w-100 mt-3" onclick="applyImputation()">
+                    <button type="button" id="applyImputationBtn" class="btn btn-primary w-100 mt-3 btn-enhanced pulse-on-hover" onclick="applyImputation()">
                         <i class="fas fa-magic me-2"></i>Apply Imputation
                     </button>
                 </div>
@@ -78,7 +75,7 @@
         
         <!-- Data Information -->
         <div class="col-lg-8">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data Information</h5>
                 </div>
@@ -92,7 +89,7 @@
                             <h6>Current Processed Data:</h6>
                             <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
                         </div>
-                        <button type="button" class="btn btn-secondary w-100 mt-2" onclick="resetData()">
+                        <button type="button" class="btn btn-secondary w-100 mt-2 btn-enhanced pulse-on-hover" onclick="resetData()">
                             <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
                         </button>
                     </div>
@@ -107,14 +104,14 @@
                 </div>
             </div>
             <!-- Missing Values Heatmap -->
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">Missing Values Distribution</div>
                 <div class="card-body">
                     <div id="missingHeatmapPlot"></div>
                 </div>
             </div>
             <!-- Intensity Distribution Comparison -->
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">Intensity Distribution Comparison</div>
                 <div class="card-body">
                     <div id="intensityComparisonPlot"></div>
@@ -141,16 +138,6 @@
             'mice_linear': 'Uses MICE with standard Linear Regression. Models each feature with missing values as a function of other features.'
         };
 
-        function showFlashMessage(message, category) {
-            const flashDiv = $('#imputation-flash-messages');
-            const alertHtml = `
-                <div class="alert alert-${category} alert-dismissible fade show" role="alert">
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>`;
-            flashDiv.html(alertHtml);
-        }
-
         function updateProcessingSteps(steps) {
             const stepsList = $('#processingSteps');
             stepsList.empty();
@@ -164,12 +151,18 @@
             if (heatmapData) {
                 try {
                     Plotly.newPlot('missingHeatmapPlot', heatmapData.data, heatmapData.layout, { responsive: true });
-                } catch (e) { console.error('Error rendering missing heatmap plot:', e); }
+                } catch (e) { 
+                    // console.error('Error rendering missing heatmap plot:', e); 
+                    window.showToast('Error rendering missing heatmap plot','danger')
+                }
             }
             if (intensityData) {
                 try {
                     Plotly.newPlot('intensityComparisonPlot', intensityData.data, intensityData.layout, { responsive: true });
-                } catch (e) { console.error('Error rendering intensity comparison plot:', e); }
+                } catch (e) { 
+                    // console.error('Error rendering intensity comparison plot:', e); 
+                    window.showToast('Error rendering intensity comparison plot','danger')
+                }
             }
         }
 
@@ -229,7 +222,7 @@
                 contentType: 'application/json',
                 data: JSON.stringify({threshold: parseFloat(threshold)}),
                 success: function(response) {
-                    showFlashMessage(response.message, response.message_category);
+                    window.showToast(response.message, response.message_category);
                     if (response.success) {
                         $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                         updateProcessingSteps(response.steps);
@@ -237,7 +230,7 @@
                                     response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
                     }
                 },
-                error: function() { showFlashMessage('An unexpected error occurred during thresholding.', 'danger'); },
+                error: function() { window.showToast('An unexpected error occurred during thresholding.', 'danger'); },
                 complete: function() { progress.hide(); btn.prop('disabled', false); }
             });
         }
@@ -266,7 +259,7 @@
                 contentType: 'application/json',
                 data: JSON.stringify({method: method, params: params}),
                 success: function(response) {
-                    showFlashMessage(response.message, response.message_category);
+                    window.showToast(response.message, response.message_category);
                     if (response.success) {
                         $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                         updateProcessingSteps(response.steps);
@@ -274,7 +267,7 @@
                                     response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
                     }
                 },
-                error: function() { showFlashMessage('An unexpected error occurred during imputation.', 'danger'); },
+                error: function() { window.showToast('An unexpected error occurred during imputation.', 'danger'); },
                 complete: function() { progress.hide(); btn.prop('disabled', false); }
             });
         }
@@ -288,16 +281,16 @@
                     data: JSON.stringify({context: 'imputation'}),
                     success: function(response) {
                         if (response.success) {
-                            showFlashMessage(response.message, 'success');
+                            window.showToast(response.message, 'success');
                             $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                             updateProcessingSteps(response.steps);
                             renderPlots(response.missing_heatmap ? JSON.parse(response.missing_heatmap) : null, 
                                         response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
                         } else {
-                            showFlashMessage(response.error, 'danger');
+                            window.showToast(response.error, 'danger');
                         }
                     },
-                    error: function() { showFlashMessage('An error occurred while resetting data.', 'danger'); }
+                    error: function() { window.showToast('An error occurred while resetting data.', 'danger'); }
                 });
             }
         }
@@ -318,16 +311,16 @@
                     contentType: 'application/json',
                     success: function(response) {
                         if (response.success) {
-                            showFlashMessage(response.message, 'success');
+                            window.showToast(response.message, 'success');
                             $('#currentShape').text(`${response.new_shape[0]} rows, ${response.new_shape[1]} columns`);
                             updateProcessingSteps(response.steps);
                             renderPlots(response.missing_heatmap ? JSON.parse(response.missing_heatmap) : null, 
                                         response.intensity_comparison_plot ? JSON.parse(response.intensity_comparison_plot) : null);
                         } else {
-                            showFlashMessage(response.error, 'danger');
+                            window.showToast(response.error, 'danger');
                         }
                     },
-                    error: function() { showFlashMessage('An error occurred while replacing zeros.', 'danger'); },
+                    error: function() { window.showToast('An error occurred while replacing zeros.', 'danger'); },
                     complete: function() { btn.prop('disabled', false).html('<i class="fas fa-eraser me-2"></i>Replace All Zeros with NaN'); }
                 });
             });

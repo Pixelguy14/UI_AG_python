@@ -174,7 +174,7 @@ def create_pie_chart(labels, values, title):
     fig.update_layout(title=title, template='plotly_white')
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
-def create_distribution_plot(data, title):
+def create_distribution_plot(data, title, group_vector=None, group_names=None):
     if data.empty:
         return _create_empty_plot_with_message(title)
 
@@ -182,14 +182,59 @@ def create_distribution_plot(data, title):
 
     if isinstance(data, pd.DataFrame):
         colors = OKABE_ITO_PALETTE
-        for i, col in enumerate(data.columns):
-            fig.add_trace(go.Histogram(
-                x=data[col].dropna().tolist(),
-                name=str(col),
-                histnorm='probability density',
-                opacity=0.6,
-                marker_color=colors[i % len(colors)]
-            ))
+        
+        # Group-based coloring
+        if group_vector and group_names:
+            group_color_map = {}
+            unique_group_ids = sorted([gid for gid in group_names.keys() if gid != '0'])
+            for i, group_id in enumerate(unique_group_ids):
+                group_color_map[group_id] = colors[i % len(colors)]
+            group_color_map['0'] = '#808080'  # Color for 'No Group'
+
+            for col in data.columns:
+                color = group_color_map.get('0', '#808080') # Default color
+                group_name_for_legend = 'No Group'
+                
+                if col in group_vector and group_vector.get(col, {}).get('groups'):
+                    first_group_id = str(group_vector[col]['groups'][0])
+                    if first_group_id in group_color_map:
+                        color = group_color_map[first_group_id]
+                    if first_group_id in group_names:
+                        group_name_for_legend = group_names[first_group_id]
+                
+                fig.add_trace(go.Histogram(
+                    x=data[col].dropna().tolist(),
+                    name=str(col),
+                    histnorm='probability density',
+                    opacity=0.6,
+                    marker_color=color,
+                    legendgroup=group_name_for_legend,
+                    showlegend=False
+                ))
+            
+            # Add custom legend for groups
+            sorted_group_ids = sorted(group_color_map.keys(), key=lambda g: (g == '0', g))
+            for group_id in sorted_group_ids:
+                group_name = group_names.get(group_id, 'No Group')
+                if group_id in group_color_map:
+                    fig.add_trace(go.Scatter(
+                        x=[None], y=[None], mode='markers',
+                        marker=dict(size=10, color=group_color_map[group_id]),
+                        legendgroup=group_name,
+                        showlegend=True,
+                        name=group_name
+                    ))
+        else:
+            # Original behavior: color by sample
+            for i, col in enumerate(data.columns):
+                fig.add_trace(go.Histogram(
+                    x=data[col].dropna().tolist(),
+                    name=str(col),
+                    histnorm='probability density',
+                    opacity=0.6,
+                    marker_color=colors[i % len(colors)]
+                ))
+        
         fig.update_layout(barmode='overlay')
     elif isinstance(data, pd.Series):
         fig.add_trace(go.Histogram(

@@ -124,7 +124,10 @@
                     link.click();
                     document.body.removeChild(link);
                 })
-                .catch(e => console.error('Download failed:', e));
+                .catch(e => 
+                    // console.error('Download failed:', e)
+                    window.showToast('Download failed','danger')
+                );
         }
         // Expose to global scope for inline onclick
         window.downloadFile = downloadFile;

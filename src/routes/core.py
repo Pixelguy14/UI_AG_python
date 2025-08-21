@@ -138,7 +138,9 @@ def summary():
             )
             plots['all_columns_density'] = create_distribution_plot(
                 numeric_df,
-                'Distribution of each sample'
+                'Distribution of each group',
+                group_vector=session.get('group_vector'),
+                group_names=session.get('group_names')
             )
 
         numeric_df_for_boxplot = df_sample.select_dtypes(include=[np.number])

@@ -40,7 +40,7 @@ def get_comparison_plots(df_before, df_after, plot_type, group_vector, group_nam
 def imputation():
     if not session.get('df_history'):
         flash('Please define sample data first')
-        return redirect(url_for('metadata'))
+        return redirect(url_for('analysis.metadata'))
     
     df_sample = session['df_history'][-1]
     
@@ -269,7 +269,7 @@ def replace_zeros():
 def normalization():
     if not session.get('df_history'):
         flash('Please define sample data first')
-        return redirect(url_for('core.metadata'))
+        return redirect(url_for('analysis.metadata'))
     
     df_current = session['df_history'][-1]
     df_before = session['df_history'][-2] if len(session.get('df_history', [])) > 1 else session['df_history'][0]
@@ -333,7 +333,7 @@ def apply_normalization():
 def transformation():
     if not session.get('df_history'):
         flash('Please define sample data first')
-        return redirect(url_for('core.metadata'))
+        return redirect(url_for('analysis.metadata'))
     
     df_current = session['df_history'][-1]
     df_before = session['df_history'][-2] if len(session.get('df_history', [])) > 1 else session['df_history'][0]
@@ -403,7 +403,7 @@ def apply_transformation():
 def scaling():
     if not session.get('df_history'):
         flash('Please define sample data first')
-        return redirect(url_for('core.metadata'))
+        return redirect(url_for('analysis.metadata'))
     
     df_current = session['df_history'][-1]
     df_before = session['df_history'][-2] if len(session.get('df_history', [])) > 1 else session['df_history'][0]

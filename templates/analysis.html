@@ -15,18 +15,18 @@
         text-align: left;
     }
 </style>
-<div class="container-fluid">
+<div class="container-fluid fade-in">
     <div class="row">
         <!--Sample DataFrame-->
         <div class="col-lg-8">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
                         <i class="fas fa-table me-2"></i>
                         Processed Data
                     </h5>
                     <div class="btn-group">
-                        <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <button type="button" class="btn btn-primary dropdown-toggle btn-enhanced pulse-on-hover" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
@@ -52,15 +52,15 @@
         <!-- Column Information Sidebar -->
         <div class="col-lg-4">
             <!-- Null Distribution Plot -->
-            <div class="card mb-3">
+            <div class="card animated-card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">
                         <i class="fas fa-chart-pie me-2"></i>
                         Column Analysis
                     </h6>
                     <div class="btn-group btn-group-sm" role="group">
-                        <button type="button" class="btn btn-light active" id="pie-chart-btn">Pie Chart</button>
-                        <button type="button" class="btn btn-light" id="density-plot-btn">Density Plot</button>
+                        <button type="button" class="btn btn-light active btn-enhanced pulse-on-hover" id="pie-chart-btn">Pie Chart</button>
+                        <button type="button" class="btn btn-light btn-enhanced pulse-on-hover" id="density-plot-btn">Density Plot</button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -74,7 +74,7 @@
             </div>
             
             <!-- Column Statistics -->
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h6 class="mb-0" id="columnInfoTitle">
                         <i class="fas fa-info-circle me-2"></i>
@@ -111,7 +111,10 @@
                     link.click();
                     document.body.removeChild(link);
                 })
-                .catch(e => console.error('Download failed:', e));
+                .catch(e => {
+                    // console.error('Download failed:', e);
+                    window.showToast('Download failed.', 'danger');
+                });
         }
         window.downloadFile = downloadFile;
 
@@ -121,32 +124,40 @@
         }
 
         function loadColumnInfo(columnName, plotType) {
+            const plotContainer = $('#plot-container');
+            const statsContainer = $('#columnStats');
             const url = plotType === 'pie' ? `{{ url_for("api.column_info_analysis", column_name="") }}${encodeURIComponent(columnName)}` : `{{ url_for("api.column_density_plot", column_name="") }}${encodeURIComponent(columnName)}`;
+
+            // Add skeleton loaders for better UX
+            plotContainer.html('<div class="skeleton" style="height: 300px; width: 100%;"></div>');
+            statsContainer.html('<div class="skeleton" style="height: 120px; width: 100%;"></div>');
 
             $.get(url)
                 .done(function(data) {
                     if (data.error) {
-                        $('#plot-container').html(`<div class="alert alert-danger">${data.error}</div>`);
+                        window.showToast(data.error, 'danger');
+                        plotContainer.html('<div class="text-center text-muted py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Could not load analysis.</p></div>');
+                        statsContainer.html(''); // Clear skeleton
                         return;
                     }
 
                     $('#columnInfoTitle').html(`<i class="fas fa-info-circle me-2"></i>${columnName}`);
                     $('#columnStats').html(data.stats);
+                    plotContainer.html('') // Clear skeleton
 
                     const plotData = JSON.parse(plotType === 'pie' ? data.null_plot : data.density_plot);
                     Plotly.newPlot('plot-container', plotData.data, plotData.layout, { responsive: true });
                 })
                 .fail(function() {
-                    $('#plot-container').html('<div class="alert alert-danger">Error loading column information</div>');
+                    window.showToast('Error loading column information', 'danger');
+                    plotContainer.html('<div class="text-center text-muted py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Could not load analysis.</p></div>');
+                    statsContainer.html(''); // Clear skeleton
                 });
         }
 
         function init() {
-            // Initialize Bootstrap dropdowns on this page
-            var dropdownElementList = [].slice.call(document.querySelectorAll('[data-bs-toggle="dropdown"]'));
-            var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
-                return new bootstrap.Dropdown(dropdownToggleEl);
-            });
+            // Dropdown initialization is now handled globally in base.html
+
             // Make the headers clickable
             $('#analysis-table th').addClass('clickable-column').on('click', function() {
                 currentColumn = $(this).text().trim();
@@ -179,13 +190,21 @@
             $('#density-plot-btn').off('click');
             const plotDiv = document.getElementById('plot-container');
             if (plotDiv && plotDiv.innerHTML) {
-                Plotly.purge(plotDiv);
+                try {
+                    Plotly.purge(plotDiv);
+                } catch (e) {
+                    // console.error("Error purging plot:", e);
+                    window.showToast('Error purging plot','danger')
+                }
             }
         }
 
+        // Register with global cleanup registry
         if (window.pageScriptRegistry) {
             window.pageScriptRegistry.cleanup = cleanup;
         }
+
+        // Initialize the page scripts
         init();
     })();
 </script>

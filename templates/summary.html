@@ -3,11 +3,11 @@
 {% block title %}Summary - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
+<div class="container-fluid fade-in" id="summary-content">
     <div class="row">
         <!-- General Statistics -->
         <div class="col-lg-12">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h5 class="mb-0">
                         <i class="fas fa-info-circle me-2"></i>
@@ -30,10 +30,10 @@
                 <!-- Mean Intensity (if available) -->
                 {% if plots.mean_intensity %}
                 <div class="col-lg-6 mb-4">
-                    <div class="plot-container card">
+                    <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             Mean Intensity
-                            <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT('meanIntensityPlot', 'mean_intensity_plot')">
+                            <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT('meanIntensityPlot', 'mean_intensity_plot')">
                                 <i class="fas fa-download me-2"></i>Export as SVG
                             </button>
                         </div>
@@ -47,10 +47,10 @@
                 <!-- Correlation Matrix (if available) -->
                 {% if plots.correlation %}
                 <div class="col-lg-6 mb-4">
-                    <div class="plot-container card">
+                    <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             Correlation Matrix (Pearson corr.)
-                            <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('correlationPlot', 'correlation_matrix')">
+                            <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_SQR('correlationPlot', 'correlation_matrix')">
                                 <i class="fas fa-download me-2"></i>Export as SVG
                             </button>
                         </div>
@@ -63,10 +63,10 @@
                 
                 <!-- Missing Values Heatmap -->
                 <div class="col-lg-6 mb-4">
-                    <div class="plot-container card">
+                    <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             Missing Values Distribution
-                            <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT('missingHeatmapPlot', 'missing_values_heatmap')">
+                            <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT('missingHeatmapPlot', 'missing_values_heatmap')">
                                 <i class="fas fa-download me-2"></i>Export as SVG
                             </button>
                         </div>
@@ -79,15 +79,15 @@
                 <!-- Distribution Plot -->
                 {% if plots.all_columns_density %}
                 <div class="col-lg-6 mb-4">
-                    <div class="plot-container card">
+                    <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             Distribution Plot
                             <div>
                                 <div class="btn-group btn-group-sm" role="group">
-                                    <button type="button" class="btn btn-light active" id="dist-select-all">Select All</button>
-                                    <button type="button" class="btn btn-light" id="dist-unselect-all">Unselect All</button>
+                                    <button type="button" class="btn btn-light active btn-enhanced pulse-on-hover" id="dist-select-all">Select All</button>
+                                    <button type="button" class="btn btn-light btn-enhanced pulse-on-hover" id="dist-unselect-all">Unselect All</button>
                                 </div>
-                                <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT('allColumnsDensityPlot', 'distribution_plot')">
+                                <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT('allColumnsDensityPlot', 'distribution_plot')">
                                     <i class="fas fa-download me-2"></i>Export as SVG
                                 </button>
                             </div>
@@ -105,15 +105,25 @@
     {% if plots.boxplot_distribution %}
     <div class="row mt-4">
         <div class="col-lg-12 mb-4">
-            <div class="plot-container card">
+            <div class="plot-container card animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     General Distribution Plot
                     <div>
                         <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-light active" id="boxplot-btn">BoxPlot</button>
-                            <button type="button" class="btn btn-light" id="violinplot-btn">ViolinPlot</button>
+                            <button type="button" class="btn btn-light active btn-enhanced pulse-on-hover" id="boxplot-btn"
+                                    hx-get="{{ url_for('api.get_distribution_plot', plot_type='boxplot', context='after') }}"
+                                    hx-swap="none"
+                                    hx-on:htmx:after-request="handleDistributionPlotResponse(event, 'boxplot')">
+                                BoxPlot
+                            </button>
+                            <button type="button" class="btn btn-light btn-enhanced pulse-on-hover" id="violinplot-btn"
+                                    hx-get="{{ url_for('api.get_distribution_plot', plot_type='violinplot', context='after') }}"
+                                    hx-swap="none"
+                                    hx-on:htmx:after-request="handleDistributionPlotResponse(event, 'violinplot')">
+                                ViolinPlot
+                            </button>
                         </div>
-                        <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT_2('boxplotDistributionPlot', 'distribution_plot')">
+                        <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT_2('boxplotDistributionPlot', 'distribution_plot')">
                             <i class="fas fa-download me-2"></i>Export as SVG
                         </button>
                     </div>
@@ -130,9 +140,44 @@
 
 {% block extra_js %}
 <script>
+    // This function must be in the global scope for hx-on to find it.
+    function handleDistributionPlotResponse(evt, plotType) {
+        const plotDiv = document.getElementById('boxplotDistributionPlot');
+        
+        // Add a skeleton loader while waiting for the plot
+        if (plotDiv) {
+            plotDiv.innerHTML = '<div class="skeleton" style="min-height: 400px; width: 100%;"></div>';
+        }
+
+        if (evt.detail.successful) {
+            try {
+                const data = JSON.parse(evt.detail.xhr.responseText);
+                if (data.error) {
+                    plotDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    return;
+                }
+                const plotData = JSON.parse(data.plot);
+                // Use a slight delay to allow the skeleton to be visible and improve perceived performance
+                setTimeout(() => {
+                    Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
+                }, 150);
+            } catch (e) {
+                plotDiv.innerHTML = '<div class="alert alert-danger">Failed to parse plot data.</div>';
+                // console.error("Error parsing plot JSON:", e);
+                window.showToast('Error parsing JSON plot','danger')
+            }
+        } else {
+            plotDiv.innerHTML = '<div class="alert alert-danger">Error loading plot data.</div>';
+        }
+
+        // Update button states using vanilla JS to avoid jQuery dependency here
+        document.getElementById('boxplot-btn').classList.toggle('active', plotType === 'boxplot');
+        document.getElementById('violinplot-btn').classList.toggle('active', plotType === 'violinplot');
+    }
+
     (function() {
         // Use an IIFE to scope this page's logic.
-        var summaryResizeHandlers = []; // Moved to a shared scope
+        var summaryResizeHandlers = [];
 
         function init() {
             function loadScript(src, callback) {
@@ -147,7 +192,6 @@
             }
 
             function initPageScripts() {
-                var currentPlotType = 'boxplot';
                 summaryResizeHandlers = []; // Clear handlers on init
 
                 function createPlot(id, plotData) {
@@ -163,7 +207,8 @@
                             window.addEventListener('resize', handler);
                             summaryResizeHandlers.push({ id: id, handler: handler });
                         } catch (e) {
-                            console.error(`Error rendering plot ${id}:`, e);
+                            // console.error(`Error rendering plot ${id}:`, e);
+                            window.showToast(`Error rendering plot ${id}:`,'danger')
                         }
                     }
                 }
@@ -174,43 +219,16 @@
                 createPlot('missingHeatmapPlot', {{ plots.missing_heatmap|default('null')|safe }});
                 createPlot('boxplotDistributionPlot', {{ plots.boxplot_distribution|default('null')|safe }});
 
-                function updateButtonStates() {
-                    $('#boxplot-btn').toggleClass('active', currentPlotType === 'boxplot');
-                    $('#violinplot-btn').toggleClass('active', currentPlotType === 'violinplot');
-                }
-
-                function updatePlot(plotType) {
-                    const plotDiv = document.getElementById('boxplotDistributionPlot');
-                    const url = `{{ url_for("api.get_distribution_plot", plot_type="", context="") }}${plotType}/after`;
-                    $.get(url).done(function(data) {
-                        if (data.error) {
-                            $(plotDiv).html(`<div class="alert alert-danger">${data.error}</div>`);
-                            return;
-                        }
-                        const plotData = JSON.parse(data.plot);
-                        Plotly.newPlot(plotDiv, plotData.data, plotData.layout);
-                    }).fail(function() {
-                        $(plotDiv).html('<div class="alert alert-danger">Error loading plot.</div>');
-                    });
-                }
-
-                $('#boxplot-btn').on('click', function() {
-                    currentPlotType = 'boxplot';
-                    updateButtonStates();
-                    updatePlot('boxplot');
-                });
-
-                $('#violinplot-btn').on('click', function() {
-                    currentPlotType = 'violinplot';
-                    updateButtonStates();
-                    updatePlot('violinplot');
-                });
+                // Boxplot/violinplot buttons are now handled by HTMX and handleDistributionPlotResponse.
+                // The old jQuery click handlers have been removed.
 
                 $('#dist-select-all').on('click', function() {
                     const plotDiv = document.getElementById('allColumnsDensityPlot');
                     if (plotDiv && plotDiv.data) {
                         Plotly.restyle(plotDiv, { visible: true });
                     }
+                    $(this).addClass('active');
+                    $('#dist-unselect-all').removeClass('active');
                 });
 
                 $('#dist-unselect-all').on('click', function() {
@@ -218,9 +236,9 @@
                     if (plotDiv && plotDiv.data) {
                         Plotly.restyle(plotDiv, { visible: 'legendonly' });
                     }
+                    $(this).addClass('active');
+                    $('#dist-select-all').removeClass('active');
                 });
-                
-                updateButtonStates();
             }
 
             loadScript("{{ url_for('static', filename='js/export.js') }}", function() {
@@ -235,8 +253,7 @@
                 });
             }
             summaryResizeHandlers = [];
-            $('#boxplot-btn').off('click');
-            $('#violinplot-btn').off('click');
+            // Remove only the handlers that were set in this script's IIFE
             $('#dist-select-all').off('click');
             $('#dist-unselect-all').off('click');
         }

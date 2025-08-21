@@ -3,11 +3,11 @@
 {% block title %}Multivariate Analysis - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
+<div class="container-fluid fade-in">
     <!-- Comparison Plots -->
     <div class="row mb-3">
         <div class="col-12">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-body">
                     <div class="row align-items-end">
                         <div class="col-md-4">
@@ -35,7 +35,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <button class="btn btn-primary w-100" onclick="loadPlots()">Compare</button>
+                            <button class="btn btn-primary w-100 btn-enhanced pulse-on-hover" onclick="loadPlots()">Compare</button>
                         </div>
                     </div>
                 </div>
@@ -45,10 +45,10 @@
 
     <div class="row">
         <div class="col-lg-6 mb-4">
-            <div class="card h-100">
+            <div class="card animated-card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0" id="plotTitle1">Plot 1</h5>
-                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('plotContainer1', 'multivariate_plot_1')">
+                    <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_SQR('plotContainer1', 'multivariate_plot_1')">
                         <i class="fas fa-download me-2"></i>Export as SVG
                     </button>
                 </div>
@@ -56,10 +56,10 @@
             </div>
         </div>
         <div class="col-lg-6 mb-4">
-            <div class="card h-100">
+            <div class="card animated-card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0" id="plotTitle2">Plot 2</h5>
-                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('plotContainer2', 'multivariate_plot_2')">
+                    <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_SQR('plotContainer2', 'multivariate_plot_2')">
                         <i class="fas fa-download me-2"></i>Export as SVG
                     </button>
                 </div>
@@ -72,10 +72,10 @@
     <div class="row">
         <!-- HCA -->
         <div class="col-lg mb-4">
-            <div class="card h-100">
+            <div class="card animated-card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Hierarchical Clustering Analysis (HCA)</h5>
-                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT_2('hcaPlotContainer', 'hca_plot')">
+                    <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT_2('hcaPlotContainer', 'hca_plot')">
                         <i class="fas fa-download me-2"></i>Export as SVG
                     </button>
                 </div>
@@ -112,6 +112,9 @@
             else if (plotType === 'plsda') url = `{{ url_for("api.get_plsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
             else if (plotType === 'oplsda') url = `{{ url_for("api.get_oplsda_plot", history_index=0) }}`.replace('/0', '/' + historyIndex);
 
+            const container = $(`#${containerId}`);
+            container.html('<div class="skeleton" style="height: 500px; width: 100%;"></div>'); // Skeleton loader
+
             $.ajax({
                 url: url,
                 method: 'GET',
@@ -120,10 +123,14 @@
                         const plotData = JSON.parse(response.plot);
                         Plotly.newPlot(containerId, plotData.data, plotData.layout, { responsive: true });
                     } else {
-                        $(`#${containerId}`).html(`<div class="alert alert-warning">Plot not available.</div>`);
+                        window.showToast('Plot not available for this processing step.', 'warning');
+                        container.html('<div class="text-center text-muted py-5"><i class="fas fa-chart-bar fa-2x mb-2"></i><p>Plot not available.</p></div>');
                     }
                 },
-                error: () => $(`#${containerId}`).html(`<div class="alert alert-danger">Error loading plot.</div>`)
+                error: () => {
+                    window.showToast('Error loading plot.', 'danger');
+                    container.html('<div class="text-center text-muted py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Error loading plot.</p></div>');
+                }
             });
         }
 
@@ -132,6 +139,8 @@
                 distance_metric: $('input[name="distance_metric"]:checked').val(),
                 linkage_method: $('input[name="linkage_method"]:checked').val()
             };
+            const container = $('#hcaPlotContainer');
+            container.html('<div class="skeleton" style="height: 600px; width: 100%;"></div>'); // Skeleton loader
 
             $.ajax({
                 url: '{{ url_for("api.get_hca_plot") }}',
@@ -140,13 +149,18 @@
                 data: JSON.stringify(payload),
                 success: function(response) {
                     if (response.plot) {
+                        container.html(''); // Clear skeleton
                         const plotData = JSON.parse(response.plot);
                         Plotly.newPlot('hcaPlotContainer', plotData.data, plotData.layout, { responsive: true });
                     } else {
-                        $('#hcaPlotContainer').html('<div class="alert alert-warning">HCA plot not available.</div>');
+                        window.showToast('HCA plot not available.', 'warning');
+                        container.html('<div class="text-center text-muted py-5"><i class="fas fa-chart-bar fa-2x mb-2"></i><p>HCA plot not available.</p></div>');
                     }
                 },
-                error: () => $('#hcaPlotContainer').html('<div class="alert alert-danger">Error loading HCA plot.</div>')
+                error: () => {
+                    window.showToast('Error loading HCA plot.', 'danger');
+                    container.html('<div class="text-center text-muted py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><p>Error loading HCA plot.</p></div>');
+                }
             });
         }
 
@@ -156,8 +170,7 @@
             const plotType = $('#plotType').val();
 
             if (isNaN(index1) || isNaN(index2)) {
-                $('#plotContainer1').html('<div class="alert alert-warning">Please select valid processing steps.</div>');
-                $('#plotContainer2').html('<div class="alert alert-warning">Please select valid processing steps.</div>');
+                window.showToast('Please select valid processing steps for comparison.', 'warning');
                 return;
             }
 

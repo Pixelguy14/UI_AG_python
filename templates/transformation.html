@@ -3,15 +3,14 @@
 {% block title %}Transformation - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Flash Message Placeholder -->
-    <div id="imputation-flash-messages"></div>
+<div class="container-fluid fade-in">
+    
 
     <!-- First Row: Controls + Data Info -->
     <div class="row">
         <!-- Transformation Methods -->
         <div class="col-lg-6">
-            <div class="card h-100">
+            <div class="card h-100 animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Transformation Methods</h5>
                 </div>
@@ -33,7 +32,7 @@
                     <div class="progress mt-3" id="transformationProgress" style="display: none;">
                         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                     </div>
-                    <button type="button" id="applyTransformationBtn" class="btn btn-primary w-100 mt-3" onclick="applyTransformation()">
+                    <button type="button" id="applyTransformationBtn" class="btn btn-primary w-100 mt-3 btn-enhanced pulse-on-hover" onclick="applyTransformation()">
                         <i class="fas fa-magic me-2"></i>Apply Transformation
                     </button>
                 </div>
@@ -42,7 +41,7 @@
         
         <!-- Data Information -->
         <div class="col-lg-6">
-            <div class="card h-100">
+            <div class="card h-100 animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Data Information</h5>
                 </div>
@@ -57,7 +56,7 @@
                             <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-secondary w-100 mt-3" onclick="resetData()">
+                    <button type="button" class="btn btn-secondary w-100 mt-3 btn-enhanced pulse-on-hover" onclick="resetData()">
                         <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
                     </button>
                     <div class="mt-3">
@@ -76,15 +75,15 @@
     <!-- Second Row: Before Transformation Plots -->
     <div class="row mt-4">
         <div class="col-lg-8">
-            <div class="plot-container card h-100">
+            <div class="plot-container card h-100 animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     Boxplot Distribution Plot Before Processing
                     <div>
                         <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-light active" id="boxplot-btn-before">BoxPlot</button>
-                            <button type="button" class="btn btn-light" id="violinplot-btn-before">ViolinPlot</button>
+                            <button type="button" class="btn btn-light active btn-enhanced pulse-on-hover" id="boxplot-btn-before">BoxPlot</button>
+                            <button type="button" class="btn btn-light btn-enhanced pulse-on-hover" id="violinplot-btn-before">ViolinPlot</button>
                         </div>
-                        <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT_2('distributionPlotBefore', 'distribution_before')">
+                        <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT_2('distributionPlotBefore', 'distribution_before')">
                             <i class="fas fa-download me-2"></i>Export as SVG
                         </button>
                     </div>
@@ -95,10 +94,10 @@
             </div>
         </div>
         <div class="col-lg-4">
-            <div class="plot-container card h-100">
+            <div class="plot-container card h-100 animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     PCA Plot Before Processing
-                    <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('pcaPlotBefore', 'pca_before')">
+                    <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_SQR('pcaPlotBefore', 'pca_before')">
                         <i class="fas fa-download me-2"></i>Export as SVG
                     </button>
                 </div>
@@ -112,15 +111,15 @@
     <!-- Third Row: After Transformation Plots -->
     <div class="row mt-4">
         <div class="col-lg-8">
-            <div class="plot-container card h-100">
+            <div class="plot-container card h-100 animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     Boxplot Distribution Plot After Processing
                     <div>
                         <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-light active" id="boxplot-btn-after">BoxPlot</button>
-                            <button type="button" class="btn btn-light" id="violinplot-btn-after">ViolinPlot</button>
+                            <button type="button" class="btn btn-light active btn-enhanced pulse-on-hover" id="boxplot-btn-after">BoxPlot</button>
+                            <button type="button" class="btn btn-light btn-enhanced pulse-on-hover" id="violinplot-btn-after">ViolinPlot</button>
                         </div>
-                        <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_RCT_2('distributionPlotAfter', 'distribution_after')">
+                        <button class="btn btn-secondary btn-sm btn-enhanced pulse-on-hover" onclick="exportPlotAsSVG_RCT_2('distributionPlotAfter', 'distribution_after')">
                             <i class="fas fa-download me-2"></i>Export as SVG
                         </button>
                     </div>
@@ -131,7 +130,7 @@
             </div>
         </div>
         <div class="col-lg-4">
-            <div class="plot-container card h-100">
+            <div class="plot-container card h-100 animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     PCA Plot After Processing
                     <button class="btn btn-secondary btn-sm" onclick="exportPlotAsSVG_SQR('pcaPlotAfter', 'pca_after')">
@@ -165,13 +164,7 @@
         let currentPlotTypeAfter = 'boxplot';
 
         function showFlashMessage(message, category) {
-            const flashDiv = $('#imputation-flash-messages');
-            const alertHtml = `
-                <div class="alert alert-${category} alert-dismissible fade show" role="alert">
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>`;
-            flashDiv.html(alertHtml);
+            window.showToast(message, category);
         }
 
         window.updateTransformationOptions = function() {
@@ -331,7 +324,8 @@
             try {
                 renderAllPlots({{ plots|tojson|safe }});
             } catch (e) {
-                console.error('Error rendering initial plots:', e);
+                // console.error('Error rendering initial plots:', e);
+                window.showToast('Error rendering initial plots','danger')
             }
             {% endif %}
 

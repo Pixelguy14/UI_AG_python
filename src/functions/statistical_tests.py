@@ -39,7 +39,7 @@ def run_t_test(
     # Log2FC with consistent samples & NaN skipping
     mean_group1 = group1_data.mean(axis=1, skipna=True)
     mean_group2 = group2_data.mean(axis=1, skipna=True)
-    epsilon = 1e-10
+    epsilon = 1
     log2fc = np.log2(mean_group2 + epsilon) - np.log2(mean_group1 + epsilon)
 
     # T-test (handles NaNs internally)
@@ -69,7 +69,7 @@ def run_wilcoxon_rank_sum(
     # Precompute medians for log2FC
     median_group1 = data[group1_cols].median(axis=1, skipna=True)
     median_group2 = data[group2_cols].median(axis=1, skipna=True)
-    epsilon = 1e-10
+    epsilon = 1
     log2fc = np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon)
 
     # Vectorized p-value calculation
@@ -245,7 +245,7 @@ def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> p
 
     # Calculate log2FC for Kruskal-Wallis (similar logic to ANOVA for multi-group)
     log2fc_values = []
-    epsilon = 1e-10
+    epsilon = 1
     for index, row in data.iterrows():
         groups_data = [row[cols].dropna() for cols in group_map.values()]
         

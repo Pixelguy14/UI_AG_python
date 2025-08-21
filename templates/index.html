@@ -3,7 +3,7 @@
 {% block title %}Home - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
+<div class="container-fluid fade-in">
     <div class="row justify-content-center">
         <div class="col-lg-9">
             <div class="text-center py-5">
@@ -17,14 +17,14 @@
                 
                 <div class="row g-4 mb-5">
                     <div class="col-md-4">
-                        <div class="card h-100 shadow-sm">
+                        <div class="card animated-card h-100 shadow-sm">
                             <div class="card-body text-center">
                                 <i class="fas fa-upload fa-3x mb-3" style="color: var(--color-primary);"></i>
                                 <h5 class="card-title">Upload & Define</h5>
                                 <p class="card-text">
                                     Load your dataset and easily define metadata and sample groups to structure your analysis.
                                 </p>
-                                <a href="{{ url_for('core.upload_file') }}" class="btn btn-primary mt-auto">
+                                <a href="{{ url_for('core.upload_file') }}" class="btn btn-primary mt-auto btn-enhanced pulse-on-hover">
                                     Get Started
                                 </a>
                             </div>
@@ -32,14 +32,14 @@
                     </div>
                     
                     <div class="col-md-4">
-                        <div class="card h-100 shadow-sm">
+                        <div class="card animated-card h-100 shadow-sm">
                             <div class="card-body text-center">
                                 <i class="fas fa-tasks fa-3x mb-3" style="color: var(--color-primary);"></i>
                                 <h5 class="card-title">Preprocess & Clean</h5>
                                 <p class="card-text">
                                     Utilize advanced thresholding, imputation, normalization, and scaling methods to prepare your data.
                                 </p>
-                                <a href="{{ url_for('processing.imputation') }}" class="btn btn-outline-primary mt-auto">
+                                <a href="{{ url_for('processing.imputation') }}" class="btn btn-outline-primary mt-auto btn-enhanced pulse-on-hover">
                                     Process Data
                                 </a>
                             </div>
@@ -47,14 +47,14 @@
                     </div>
                     
                     <div class="col-md-4">
-                        <div class="card h-100 shadow-sm">
+                        <div class="card animated-card h-100 shadow-sm">
                             <div class="card-body text-center">
                                 <i class="fas fa-chart-pie fa-3x mb-3" style="color: var(--color-primary);"></i>
                                 <h5 class="card-title">Analyze & Discover</h5>
                                 <p class="card-text">
                                     Perform powerful multivariate and differential analyses to uncover biological insights.
                                 </p>
-                                <a href="{{ url_for('api.run_differential_analysis') }}" class="btn btn-outline-primary mt-auto">
+                                <a href="{{ url_for('analysis.differential_analysis') }}" class="btn btn-outline-primary mt-auto btn-enhanced pulse-on-hover">
                                     Start Analysis
                                 </a>
                             </div>
@@ -62,7 +62,7 @@
                     </div>
                 </div>
                 
-                <div class="card shadow-sm">
+                <div class="card animated-card shadow-sm">
                     <div class="card-header">
                         <h5 class="mb-0">
                             <i class="fas fa-star me-2"></i>
@@ -95,3 +95,25 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    // This function will be called on the htmx:load event.
+    function showWelcomeToast(event) {
+        // We only want to show the toast on the initial full-page load,
+        // which is when the body is the target of the swap.
+        if (event.target === document.body) {
+            setTimeout(function() {
+                window.showToast('Welcome! The notification system is working correctly.', 'success');
+            }, 500);
+            
+            // Remove this specific listener so it doesn't fire again on partial swaps.
+            document.body.removeEventListener('htmx:load', showWelcomeToast);
+        }
+    }
+
+    // Use the htmx:load event for reliability in an HTMX application.
+    document.body.addEventListener('htmx:load', showWelcomeToast);
+</script>
+{% endblock %}
+

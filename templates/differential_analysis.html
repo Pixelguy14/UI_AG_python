@@ -19,14 +19,14 @@
         text-align: left;
     }
 </style>
-<div class="container-fluid">
+<div class="container-fluid fade-in">
     <!-- Flash Message Placeholder -->
     <div id="analysis-flash-messages"></div>
 
     <!-- Controls and Info -->
     <div class="row">
         <div class="col-lg-7">
-            <div class="card h-100">
+            <div class="card animated-card h-100">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-calculator me-2"></i>Differential Analysis Controls</h5>
                 </div>
@@ -93,7 +93,7 @@
                         </select>
                     </div>
 
-                    <button type="button" id="runAnalysisBtn" class="btn btn-primary w-100 mt-3">
+                    <button type="button" id="runAnalysisBtn" class="btn btn-primary w-100 mt-3 btn-enhanced pulse-on-hover">
                         <i class="fas fa-play-circle me-2"></i>Run Analysis
                     </button>
                     <div class="progress mt-3" id="analysisProgress" style="display: none;">
@@ -103,7 +103,7 @@
             </div>
         </div>
         <div class="col-lg-5">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-globe me-2"></i>PERMANOVA</h5>
                 </div>
@@ -123,7 +123,7 @@
                             <input type="number" id="permutations" class="form-control" value="999">
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
-                            <button type="button" id="runPermanovaBtn" class="btn btn-secondary w-100">
+                            <button type="button" id="runPermanovaBtn" class="btn btn-secondary w-100 btn-enhanced pulse-on-hover">
                                 <i class="fas fa-play-circle me-2"></i>Run PERMANOVA
                             </button>
                         </div>
@@ -137,7 +137,7 @@
                     <div id="permanovaResults"></div>
                 </div>
             </div>
-            <div class="card mt-4">
+            <div class="card animated-card mt-4">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-ruler-combined me-2"></i>Latest Differential Analysis Applied</h5>
                 </div>
@@ -156,11 +156,11 @@
     <!-- Results Table -->
     <div class="row mt-4">
         <div class="col-12">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="m-0">Analysis Results</h5>
                     <div class="btn-group">
-                        <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <button type="button" class="btn btn-primary dropdown-toggle btn-enhanced pulse-on-hover" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
@@ -188,11 +188,6 @@
 {% block extra_js %}
 <script>
     (function() {
-        function showFlash(message, category) {
-            const flashDiv = $('#analysis-flash-messages');
-            flashDiv.html(`<div class="alert alert-${category} alert-dismissible fade show">${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`);
-        }
-
         function updatePairedOptions() {
             const groups = $('.group-checkbox:checked').map((_, el) => $(el).val()).get();
             const container = $('#pairedMapContainer');
@@ -260,7 +255,7 @@
                         }
                     });
                     if (payload.paired_map.length === 0) {
-                        showFlash('Please map the paired samples before running the analysis.', 'warning');
+                        window.showToast('Please map the paired samples before running the analysis.', 'warning');
                         return;
                     }
                 }
@@ -268,7 +263,7 @@
                 if (payload.test_type === 'linear_model') {
                     payload.formula = $('#lmFormula').val();
                     if (!payload.formula) {
-                        showFlash('Please provide a formula for the linear model.', 'warning');
+                        window.showToast('Please provide a formula for the linear model.', 'warning');
                         return;
                     }
                 }
@@ -284,16 +279,16 @@
                     data: JSON.stringify(payload),
                     success: function(response) {
                         if (response.error) {
-                            showFlash(response.error, 'danger');
+                            window.showToast(response.error, 'danger');
                             $('#resultsContainer').html(`<p class="text-danger">${response.error}</p>`);
                         } else {
-                            showFlash('Analysis completed successfully!', 'success');
+                            window.showToast('Analysis completed successfully!', 'success');
                             $('#resultsContainer').html(response.html);
                         }
                     },
                     error: function(xhr) {
                         const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
-                        showFlash(errorMsg, 'danger');
+                        window.showToast(errorMsg, 'danger');
                         $('#resultsContainer').html('<p class="text-danger">An error occurred.</p>');
                     },
                     complete: function() {
@@ -326,9 +321,9 @@
                     data: JSON.stringify(payload),
                     success: function(response) {
                         if (response.error) {
-                            showFlash(response.error, 'danger');
+                            window.showToast(response.error, 'danger');
                         } else {
-                            showFlash('PERMANOVA completed successfully!', 'success');
+                            window.showToast('PERMANOVA completed successfully!', 'success');
                             resultsContainer.show();
                             resultsDiv.html(
                                 `<ul class="list-unstyled">
@@ -340,7 +335,7 @@
                     },
                     error: function(xhr) {
                         const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
-                        showFlash(errorMsg, 'danger');
+                        window.showToast(errorMsg, 'danger');
                     },
                     complete: function() {
                         progress.hide();
@@ -350,7 +345,7 @@
             });
 
             const resultsContainer = document.getElementById('resultsContainer');
-            if (resultsContainer && resultsContainer.textContent.trim().startsWith('<ul class=\'list-unstyled mb-0\'>')) {
+            if (resultsContainer && resultsContainer.textContent.trim().startsWith('<ul class="list-unstyled mb-0">')) {
                 resultsContainer.innerHTML = resultsContainer.textContent;
             }
         }

@@ -3,10 +3,10 @@
 {% block title %}Group Assignments - Metabolomic Data Analysis{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
+<div class="container-fluid fade-in">
     <div class="row">
         <div class="col-lg-8">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h4 class="mb-0">
                         <i class="fas fa-users me-2"></i>
@@ -70,7 +70,7 @@
                     </div>
                     
                     <div class="mt-3">
-                        <button type="button" class="btn btn-primary" onclick="saveGroupAssignments()">
+                        <button type="button" class="btn btn-primary btn-enhanced pulse-on-hover" onclick="saveGroupAssignments()">
                             <i class="fas fa-save me-2"></i>Save Group Changes
                         </button>
                     </div>
@@ -79,7 +79,7 @@
         </div>
         
         <div class="col-lg-4">
-            <div class="card">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Processing Steps</h5>
                 </div>
@@ -94,7 +94,7 @@
                     </ul>
                 </div>
             </div>
-            <div class="card mt-3">
+            <div class="card animated-card mt-3">
                 <div class="card-header">
                     <h5 class="mb-0">
                         <i class="fas fa-chart-pie me-2"></i>
@@ -115,7 +115,7 @@
                 </div>
             </div>
             
-            <div class="card mt-3">
+            <div class="card animated-card mt-3">
                 <div class="card-header">
                     <h6 class="mb-0">
                         <i class="fas fa-info-circle me-2"></i>
@@ -264,7 +264,7 @@
             const nGroups = parseInt($('#nGroups').val());
             for (let i = 1; i <= nGroups; i++) {
                 if (!groupNames[i]) {
-                    alert(`Please provide a name for Group ${i}`);
+                    window.showToast(`Please provide a name for Group ${i}`, 'warning');
                     return;
                 }
             }
@@ -283,14 +283,14 @@
                 data: JSON.stringify(data),
                 success: function(response) {
                     if (response.success) {
-                        alert(response.message);
-                        window.location.reload();
+                        window.showToast(response.message, 'success');
+                        setTimeout(() => window.location.reload(), 1500);
                     } else {
-                        alert('Error: ' + response.message);
+                        window.showToast('Error: ' + response.message, 'danger');
                     }
                 },
                 error: function() {
-                    alert('An unexpected error occurred.');
+                    window.showToast('An unexpected error occurred.', 'danger');
                 }
             });
         }
@@ -310,14 +310,15 @@
                 }),
                 success: function(response) {
                     if (response.success) {
+                        window.showToast('Regex applied successfully!', 'info');
                         groupAssignments = response.groupAssignments; // Update local groupAssignments
                         updateAllGroupAssignments(); // Re-render checkboxes
                     } else {
-                        alert('Error applying regex: ' + response.message);
+                        window.showToast('Error applying regex: ' + response.message, 'danger');
                     }
                 },
                 error: function() {
-                    alert('An error occurred while applying regex.');
+                    window.showToast('An error occurred while applying regex.', 'danger');
                 }
             });
         }
