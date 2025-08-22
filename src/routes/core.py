@@ -68,8 +68,6 @@ def upload_file():
                     df.rename(columns=rename_map, inplace=True)
                 
                 session['df_main'] = df
-                session['df_original'] = df
-                session['orientation'] = orientation
                 
                 df_preview_html = df.head(10).to_html(classes='table table-striped table-hover table-sm', table_id='dataframe-preview-table', border=0)
                 
@@ -178,12 +176,12 @@ def dataframe_view():
 
 @core_bp.route('/reset')
 def reset():
-    if session.get('df_original') is None:
-        flash('No original data to reset to')
+    if session.get('df_main') is None:
+        flash('No data to reset')
         return redirect(url_for('core.index'))
     
     session.clear()
-    flash('Data reset to original state')
+    flash('Page reset successfully')
     return redirect(url_for('core.upload_file'))
 
 @core_bp.route('/export_dataframe/<string:format>/<string:context>')
@@ -201,7 +199,7 @@ def export_dataframe(format, context):
     elif context == 'differential_analysis_results':
         df = session.get('differential_analysis_results')
     elif context == 'comparison_original':
-        df = session.get('df_sample')
+        df = session['df_history'][0]
     elif context == 'comparison_processed':
         if session.get('df_history'):
             df = session['df_history'][-1]

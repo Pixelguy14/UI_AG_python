@@ -53,6 +53,31 @@
                             </div>
                         </div>
                         
+                        <div class="mb-4">
+                            <label class="form-label">
+                                <strong>Data Pre-processing Status (if applicable)</strong>
+                            </label>
+                            <div class="card animated-card">
+                                <div class="card-body">
+                                    <p class="text-muted mb-3">
+                                        If your data has already undergone these steps outside the platform, please indicate:
+                                    </p>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="is_log_transformed" id="is_log_transformed" value="true">
+                                        <label class="form-check-label" for="is_log_transformed">
+                                            Data is already Log-Transformed (e.g., log2, log10)
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="is_scaled" id="is_scaled" value="true">
+                                        <label class="form-check-label" for="is_scaled">
+                                            Data is already Scaled (e.g., Z-score, Pareto)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                             <button type="submit" class="btn btn-primary btn-lg btn-enhanced pulse-on-hover">
                                 <i class="fas fa-upload me-2"></i>

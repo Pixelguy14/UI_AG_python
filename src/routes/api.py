@@ -447,7 +447,7 @@ def clustergram_data():
 
 @api_bp.route('/apply_regex_grouping', methods=['POST'])
 def apply_regex_grouping():
-    df_sample = session.get('df_sample')
+    df_sample = session.get('df_history')[-1]
     if df_sample is None or df_sample.empty:
         return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
 

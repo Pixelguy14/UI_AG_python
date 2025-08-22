@@ -33,7 +33,6 @@ def metadata():
         
         # Store in session
         session['df_metadata'] = df_metadata if not df_metadata.empty else None
-        session['df_sample'] = df_sample if not df_sample.empty else None
         session['df_history'] = [df_sample] if not df_sample.empty else []
         session['df_main'] = df_original
 
@@ -75,8 +74,8 @@ def metadata():
     
     if session.get('df_metadata') is not None and not session.get('df_metadata').empty:
         existing_metadata = session['df_metadata'].columns.tolist()
-    if session.get('df_sample') is not None and not session.get('df_sample').empty:
-        existing_sample = session['df_sample'].columns.tolist()
+    if session.get('df_history') and session['df_history'] and not session['df_history'][0].empty:
+        existing_sample = session['df_history'][0].columns.tolist()
     
     return render_template('metadata.html', 
                          columns=df.columns.tolist(),
@@ -147,8 +146,7 @@ def view_groups():
 @analysis_bp.route('/update_groups', methods=['POST'])
 def update_groups():
     """Update group assignments without resetting data processing."""
-    df_sample = session.get('df_sample')
-    if df_sample is None or df_sample.empty:
+    if not session.get('df_history'):
         return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
 
     data = request.json
@@ -164,7 +162,7 @@ def update_groups():
     session['group_regexes'] = group_regexes
 
     # Recreate group vector
-    sample_cols = session['df_sample'].columns.tolist()
+    sample_cols = session['df_history'][0].columns.tolist()
     group_vector = {}
     for col in sample_cols:
         str_col = str(col) # Ensure key is a string
@@ -222,7 +220,7 @@ def comparison():
         flash('Please define sample data first')
         return redirect(url_for('analysis.metadata'))
     
-    df_original = session['df_sample']
+    df_original = session['df_history'][0]
     df_history = session.get('df_history', [])
     processing_steps = session.get('processing_steps', [])
 

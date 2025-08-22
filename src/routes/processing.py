@@ -69,7 +69,7 @@ def imputation():
     )
 
     return render_template('imputation.html',
-                         original_shape=session['df_sample'].shape,
+                         original_shape=session['df_history'][0].shape,
                          current_shape=df_sample.shape,
                          processing_steps=session['processing_steps'],
                          plots=plots)
@@ -124,7 +124,7 @@ def threshold():
 
     return jsonify({
         'success': True,
-        'original_shape': session['df_sample'].shape,
+        'original_shape': session['df_history'][0].shape,
         'new_shape': df_thresholded.shape,
         'message': f'Thresholding applied with {threshold_percent}%',
         'steps': session['processing_steps'],
@@ -280,7 +280,7 @@ def normalization():
     plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'))
 
     return render_template('normalization.html',
-                           original_shape=session['df_sample'].shape,
+                           original_shape=session['df_history'][0].shape,
                            current_shape=df_current.shape,
                            processing_steps=session.get('processing_steps', []),
                            plots=plots
@@ -344,7 +344,7 @@ def transformation():
     plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'))
 
     return render_template('transformation.html',
-                           original_shape=session['df_sample'].shape,
+                           original_shape=session['df_history'][0].shape,
                            current_shape=df_current.shape,
                            processing_steps=session.get('processing_steps', []),
                            plots=plots
@@ -414,7 +414,7 @@ def scaling():
     plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'))
 
     return render_template('scaling.html',
-                           original_shape=session['df_sample'].shape,
+                           original_shape=session['df_history'][0].shape,
                            current_shape=df_current.shape,
                            processing_steps=session.get('processing_steps', []),
                            plots=plots

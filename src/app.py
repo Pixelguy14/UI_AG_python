@@ -33,18 +33,10 @@ def create_app():
             session['df_metadata'] = None
         if 'df_meta_thd' not in session:
             session['df_meta_thd'] = None
-        if 'df_sample' not in session:
-            session['df_sample'] = None
         if 'df_history' not in session:
             session['df_history'] = []
         if 'imputed_mask' not in session:
             session['imputed_mask'] = None
-        if 'df_original' not in session:
-            session['df_original'] = None
-        if 'current_column' not in session:
-            session['current_column'] = ''
-        if 'orientation' not in session:
-            session['orientation'] = 'cols'
         if 'imputation_performed' not in session:
             session['imputation_performed'] = False
         if 'group_assignments' not in session:
