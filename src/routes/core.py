@@ -1,13 +1,16 @@
-from flask import Blueprint, render_template, request, session, redirect, url_for, flash, Response
+from flask import Blueprint, render_template, request, session, redirect, url_for, flash, Response, current_app
 from werkzeug.utils import secure_filename
 import os
 import io
 import pandas as pd
 import numpy as np
+import shutil
+import uuid
 
 # Import functions from other modules within the src package
 from ..functions.exploratory_data import loadFile, preprocessing_summary_perVariable, preprocessing_general_dataset_statistics # type: ignore
 from ..functions.plot_definitions import create_bar_plot, create_heatmap, create_heatmap_BW, create_distribution_plot, create_boxplot # type: ignore
+from .. import data_manager
 
 # 1. Create a Blueprint object
 core_bp = Blueprint('core', __name__, template_folder='../../templates', static_folder='../../static')
@@ -32,14 +35,17 @@ def upload_file():
             return redirect(request.url)
         
         if file:
-            # Reset session state for a new file upload
             session.clear()
             
+            # Generate a new session ID
+            session['session_id'] = str(uuid.uuid4())
+
+            # Create the session folder explicitly
+            session_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], session['session_id'])
+            os.makedirs(session_folder, exist_ok=True)
+
             filename = secure_filename(file.filename)
-            # Correct the path for app factory structure
-            upload_folder = os.path.join(os.path.dirname(__file__), '../../uploads')
-            os.makedirs(upload_folder, exist_ok=True)
-            filepath = os.path.join(upload_folder, filename)
+            filepath = os.path.join(session_folder, filename)
             file.save(filepath)
             
             try:
@@ -67,8 +73,8 @@ def upload_file():
                 if rename_map:
                     df.rename(columns=rename_map, inplace=True)
                 
-                session['df_main'] = df
-                
+                data_manager.save_dataframe(df, 'df_main_path', 'df_main')
+
                 df_preview_html = df.head(10).to_html(classes='table table-striped table-hover table-sm', table_id='dataframe-preview-table', border=0)
                 
                 summary_stats = preprocessing_summary_perVariable(df)
@@ -96,15 +102,29 @@ def upload_file():
 
 @core_bp.route('/summary')
 def summary():
-    if session.get('df_main') is None:
+    df = data_manager.load_dataframe('df_main_path')
+    if df is None:
         flash('Please upload a file first')
         return redirect(url_for('core.upload_file'))
     
-    df = session['df_main']
-    
     plots = {}
-    if session.get('df_history') and not session['df_history'][-1].empty:
-        df_sample = session['df_history'][-1]
+    history_paths = session.get('df_history_paths', [])
+    
+    if not history_paths:
+        # No history, use the main dataframe
+        df_sample = df
+        general_stats = preprocessing_general_dataset_statistics(df_sample)
+        plots['missing_heatmap'] = create_heatmap_BW(
+            df_sample.isnull().astype(int),
+            title='Missing Values Distribution'
+        )
+    else:
+        # Load the latest dataframe from history
+        df_sample = data_manager.load_dataframe(history_paths[-1])
+        if df_sample is None:
+            flash('Could not load the latest data. Please try uploading the file again.', 'danger')
+            return redirect(url_for('core.upload_file'))
+
         general_stats = preprocessing_general_dataset_statistics(df_sample)
         numeric_df = df_sample.select_dtypes(include=[np.number])
         
@@ -149,12 +169,6 @@ def summary():
                 group_vector=session.get('group_vector'),
                 group_names=session.get('group_names')
             )
-    else:
-        plots['missing_heatmap'] = create_heatmap_BW(
-            df.isnull().astype(int),
-            title='Missing Values Distribution'
-        )
-        general_stats = preprocessing_general_dataset_statistics(df)
 
     return render_template('summary.html', 
                          general_stats=general_stats.to_html(classes='table table-striped'),
@@ -162,11 +176,11 @@ def summary():
 
 @core_bp.route('/dataframe')
 def dataframe_view():
-    if session.get('df_main') is None:
+    df = data_manager.load_dataframe('df_main_path')
+    if df is None:
         flash('Please upload a file first')
         return redirect(url_for('core.upload_file'))
     
-    df = session['df_main']
     df_html = df.to_html(classes='table table-striped table-hover', table_id='dataframe-table')
     
     return render_template('dataframe.html', 
@@ -176,45 +190,51 @@ def dataframe_view():
 
 @core_bp.route('/reset')
 def reset():
-    if session.get('df_main') is None:
+    if session.get('df_main_path') is None:
         flash('No data to reset')
         return redirect(url_for('core.index'))
     
+    data_manager.delete_all_session_dataframes()
     session.clear()
     flash('Page reset successfully')
     return redirect(url_for('core.upload_file'))
 
 @core_bp.route('/export_dataframe/<string:format>/<string:context>')
 def export_dataframe(format, context):
-    df = None
-    # Define contexts that may need metadata merged
-    contexts_with_metadata = ['analysis', 'comparison_original', 'comparison_processed']
+    """
+    Exports a dataframe to the specified format (csv, tsv, excel).
+    The context determines which dataframe to export.
+    """
+    
+    def get_dataframe_by_context(context):
+        """Helper function to retrieve the correct dataframe based on context."""
+        history_paths = session.get('df_history_paths', [])
+        
+        if context == 'main':
+            return data_manager.load_dataframe('df_main_path')
+        elif context == 'analysis':
+            if history_paths:
+                return data_manager.load_dataframe(history_paths[-1])
+        elif context == 'differential_analysis_results':
+            return data_manager.load_dataframe('differential_analysis_results_path')
+        elif context == 'comparison_original':
+            if history_paths:
+                return data_manager.load_dataframe(history_paths[0])
+        elif context == 'comparison_processed':
+            if history_paths:
+                return data_manager.load_dataframe(history_paths[-1])
+        
+        return None
 
-    # Retrieve the correct dataframe from session based on context
-    if context == 'main':
-        df = session.get('df_main')
-    elif context == 'analysis':
-        if session.get('df_history'):
-            df = session['df_history'][-1]
-    elif context == 'differential_analysis_results':
-        df = session.get('differential_analysis_results')
-    elif context == 'comparison_original':
-        df = session['df_history'][0]
-    elif context == 'comparison_processed':
-        if session.get('df_history'):
-            df = session['df_history'][-1]
-    else:
-        return "Invalid context", 400
+    df = get_dataframe_by_context(context)
 
     if df is None:
         flash('No data available to export for the selected context.', 'warning')
         return redirect(request.referrer or url_for('core.index'))
 
-    df = df.copy()
-
     # Merge metadata if the context requires it
-    if context in contexts_with_metadata:
-        metadata_df = session.get('df_metadata')
+    if context in ['analysis', 'comparison_original', 'comparison_processed']:
+        metadata_df = data_manager.load_dataframe('df_metadata_path')
         if metadata_df is not None and not metadata_df.empty:
             # Ensure indices are compatible for merging
             if df.index.name != metadata_df.index.name:
@@ -223,27 +243,32 @@ def export_dataframe(format, context):
 
     # Prepare the file for download
     output = io.BytesIO()
-    filename = f"{context}_data.csv"
-    mimetype = 'text/csv'
+    
+    format_details = {
+        'csv': ('text/csv', f'{context}_data.csv'),
+        'tsv': ('text/tab-separated-values', f'{context}_data.tsv'),
+        'excel': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f'{context}_data.xlsx')
+    }
+
+    if format not in format_details:
+        return "Invalid format", 400
+
+    mimetype, filename = format_details[format]
 
     if format == 'csv':
         df.to_csv(output, index=True)
     elif format == 'tsv':
         df.to_csv(output, sep='\t', index=True)
-        mimetype = 'text/tab-separated-values'
-        filename = f'{context}_data.tsv'
     elif format == 'excel':
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=True)
-        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        filename = f'{context}_data.xlsx'
-    else:
-        return "Invalid format", 400
-
+    
     output.seek(0)
 
-    # Create a response and set the correct headers to trigger download
-    response = Response(output.getvalue(), mimetype=mimetype)
-    response.headers.set("Content-Disposition", f"attachment; filename={filename}")
-    return response
+    return Response(
+        output.getvalue(),
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 

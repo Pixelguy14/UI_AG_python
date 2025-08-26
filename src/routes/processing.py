@@ -23,26 +23,35 @@ from ..functions.plot_definitions import ( # type: ignore
     create_heatmap_BW, create_intensity_comparison_plot, create_boxplot, 
     create_violinplot, create_pca_plot
 )
+from .. import data_manager
 
 processing_bp = Blueprint('processing', __name__, template_folder='../../templates')
 
 # Helper functions for plotting (could be moved to a helper module)
-def get_comparison_plots(df_before, df_after, plot_type, group_vector, group_names):
+def get_comparison_plots(df_before, df_after, plot_type, group_vector, group_names, processing_step_name):
     plots = {}
     plot_func = create_boxplot if plot_type == 'boxplot' else create_violinplot
-    plots['dist_before'] = plot_func(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
-    plots['dist_after'] = plot_func(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
+    plots['dist_before'] = plot_func(df_before, f'Before {processing_step_name}', group_vector=group_vector, group_names=group_names)
+    plots['pca_before'] = create_pca_plot(df_before, f'PCA Before {processing_step_name}', group_vector=group_vector, group_names=group_names)
+    plots['dist_after'] = plot_func(df_after, f'After {processing_step_name}', group_vector=group_vector, group_names=group_names)
+    plots['pca_after'] = create_pca_plot(df_after, f'PCA After {processing_step_name}', group_vector=group_vector, group_names=group_names)
     return plots
+
+def _apply_processing_method(method_name, method_function, df, params):
+    """Helper function to apply a processing method and return the result."""
+    try:
+        return method_function(df, **params)
+    except Exception as e:
+        raise ValueError(f"Error applying {method_name}: {e}")
 
 @processing_bp.route('/imputation')
 def imputation():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please define sample data first')
         return redirect(url_for('analysis.metadata'))
     
-    df_sample = session['df_history'][-1]
+    df_sample = data_manager.load_dataframe(history_paths[-1])
     
     # Initialize steps if they are empty
     if 'processing_steps' not in session or not session['processing_steps']:
@@ -53,36 +62,37 @@ def imputation():
     plots['missing_heatmap'] = create_heatmap_BW(
         df_sample,
         title='Missing Values Distribution (Imputed Highlighted)',
-        imputed=session['imputation_performed'],
+        imputed=session.get('imputation_performed', False),
         null_mask=session.get('imputed_mask')
     )
     df_before=None
-    if len(session.get('df_history', [])) > 1:
-        df_before = session['df_history'][-2]
+    if len(history_paths) > 1:
+        df_before = data_manager.load_dataframe(history_paths[-2])
     else:
-        df_before = session['df_history'][0]
+        df_before = data_manager.load_dataframe(history_paths[0])
 
     plots['intensity_comparison_plot'] = create_intensity_comparison_plot(
         original_df=df_before,
         imputed_df=df_sample,
         log_transform=True
     )
-
+    original_df = data_manager.load_dataframe(history_paths[0])
     return render_template('imputation.html',
-                         original_shape=session['df_history'][0].shape,
+                         original_shape=original_df.shape,
                          current_shape=df_sample.shape,
                          processing_steps=session['processing_steps'],
                          plots=plots)
 
 @processing_bp.route('/threshold', methods=['POST'])
 def threshold():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available'})
     
     threshold_percent = float(request.json.get('threshold', 80))
     
-    df_sample = session['df_history'][-1]
-    df_metadata = session.get('df_metadata')
+    df_sample = data_manager.load_dataframe(history_paths[-1])
+    df_metadata = data_manager.load_dataframe('df_metadata_path')
     
     # Apply thresholding
     num_columns = len(df_sample.columns)
@@ -93,12 +103,15 @@ def threshold():
     # Cut metadata if it exists
     if df_metadata is not None and not df_metadata.empty:
         df_meta_thd = df_metadata.loc[df_thresholded.index]
-        session['df_meta_thd'] = df_meta_thd
+        data_manager.save_dataframe(df_meta_thd, 'df_meta_thd_path', 'df_meta_thd')
     else:
-        session['df_meta_thd'] = None
+        session['df_meta_thd_path'] = None
     
     # Store result
-    session['df_history'].append(df_thresholded)
+    history_key = f'df_history_{len(history_paths)}'
+    data_manager.save_dataframe(df_thresholded, history_key, 'df_history')
+    history_paths.append(history_key)
+    session['df_history_paths'] = history_paths
     
     # Update processing steps
     session['processing_steps'].append({'icon': 'fa-filter', 'color': 'text-info', 'message': f'Applied thresholding: {threshold_percent}% non-null values. New shape: {df_thresholded.shape[0]} rows, {df_thresholded.shape[1]} columns.'})
@@ -108,23 +121,23 @@ def threshold():
     updated_heatmap = create_heatmap_BW(
         df_thresholded,
         title='Missing Values Distribution (Imputed Highlighted)',
-        imputed=session['imputation_performed'],
+        imputed=session.get('imputation_performed', False),
         null_mask=session.get('imputed_mask')
     )
     df_before=None
-    if len(session.get('df_history', [])) > 1:
-        df_before = session['df_history'][-2]
+    if len(history_paths) > 1:
+        df_before = data_manager.load_dataframe(history_paths[-2])
     else:
-        df_before = session['df_history'][0]
+        df_before = data_manager.load_dataframe(history_paths[0])
     intensityComparisonPlot = create_intensity_comparison_plot(
         original_df=df_before,
         imputed_df=df_thresholded,
         log_transform=True
     )
-
+    original_df = data_manager.load_dataframe(history_paths[0])
     return jsonify({
         'success': True,
-        'original_shape': session['df_history'][0].shape,
+        'original_shape': original_df.shape,
         'new_shape': df_thresholded.shape,
         'message': f'Thresholding applied with {threshold_percent}%',
         'steps': session['processing_steps'],
@@ -134,53 +147,48 @@ def threshold():
 
 @processing_bp.route('/apply_imputation', methods=['POST'])
 def apply_imputation():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No thresholded sample data available'})
     
     method = request.json.get('method')
     params = request.json.get('params', {})
     
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
 
     try:
         # Apply scaling for advanced methods
         df_scaled = (df - df.mean()) / df.std()
         
-        if method == 'n_imputation':
-            n_val = params.get('n_value', 0)
-            imputed_df = nImputed(df, n=n_val)
-        elif method == 'half_minimum':
-            imputed_df = halfMinimumImputed(df)
-        elif method == 'mean':
-            imputed_df = meanImputed(df)
-        elif method == 'median':
-            imputed_df = medianImputed(df)
-        elif method == 'miss_forest':
-            max_iter = params.get('max_iter', 10)
-            n_estimators = params.get('n_estimators', 100)
-            imputed_df = missForestImputed(df_scaled, max_iter=max_iter, n_estimators=n_estimators)
-            imputed_df = postprocess_imputation(imputed_df, df)
-        elif method == 'svd':
-            n_components = params.get('n_components', 5)
-            imputed_df = svdImputed(df_scaled, n_components=n_components)
-            imputed_df = postprocess_imputation(imputed_df, df)
-        elif method == 'knn':
-            n_neighbors = params.get('n_neighbors', 2)
-            imputed_df = knnImputed(df_scaled, n_neighbors=n_neighbors)
-            imputed_df = postprocess_imputation(imputed_df, df)
-        elif method == 'mice_bayesian':
-            max_iter = params.get('max_iter', 20)
-            imputed_df = miceBayesianRidgeImputed(df_scaled, max_iter=max_iter)
-            imputed_df = postprocess_imputation(imputed_df, df)
-        elif method == 'mice_linear':
-            max_iter = params.get('max_iter', 20)
-            imputed_df = miceLinearRegressionImputed(df_scaled, max_iter=max_iter)
-            imputed_df = postprocess_imputation(imputed_df, df)
-        else:
+        imputation_methods = {
+            'n_imputation': (nImputed, {'n': params.get('n_value', 0)}),
+            'half_minimum': (halfMinimumImputed, {}),
+            'mean': (meanImputed, {}),
+            'median': (medianImputed, {}),
+            'miss_forest': (missForestImputed, {'max_iter': params.get('max_iter', 10), 'n_estimators': params.get('n_estimators', 100)}),
+            'svd': (svdImputed, {'n_components': params.get('n_components', 5)}),
+            'knn': (knnImputed, {'n_neighbors': params.get('n_neighbors', 2)}),
+            'mice_bayesian': (miceBayesianRidgeImputed, {'max_iter': params.get('max_iter', 20)}),
+            'mice_linear': (miceLinearRegressionImputed, {'max_iter': params.get('max_iter', 20)})
+        }
+
+        if method not in imputation_methods:
             return jsonify({'error': 'Unknown imputation method'})
+
+        method_func, method_params = imputation_methods[method]
+        
+        df_to_impute = df_scaled if method in ['miss_forest', 'svd', 'knn', 'mice_bayesian', 'mice_linear'] else df
+
+        imputed_df = _apply_processing_method(method, method_func, df_to_impute, method_params)
+
+        if method in ['miss_forest', 'svd', 'knn', 'mice_bayesian', 'mice_linear']:
+            imputed_df = postprocess_imputation(imputed_df, df)
         
         # Store results
-        session['df_history'].append(imputed_df)
+        history_key = f'df_history_{len(history_paths)}'
+        data_manager.save_dataframe(imputed_df, history_key, 'df_history')
+        history_paths.append(history_key)
+        session['df_history_paths'] = history_paths
         
         # Calculate imputed mask: where was it null before and now it's not null
         imputed_mask = df.isnull() & ~imputed_df.isnull()
@@ -195,14 +203,14 @@ def apply_imputation():
         updated_heatmap = create_heatmap_BW(
             imputed_df,
             title='Missing Values Distribution (Imputed Highlighted)',
-            imputed=session['imputation_performed'],
+            imputed=session.get('imputation_performed', False),
             null_mask=session.get('imputed_mask')
         )
         df_before=None
-        if len(session.get('df_history', [])) > 1:
-            df_before = session['df_history'][-2]
+        if len(history_paths) > 1:
+            df_before = data_manager.load_dataframe(history_paths[-2])
         else:
-            df_before = session['df_history'][0]
+            df_before = data_manager.load_dataframe(history_paths[0])
         
         intensityComparisonPlot = create_intensity_comparison_plot(
             original_df=df_before,
@@ -225,13 +233,17 @@ def apply_imputation():
 
 @processing_bp.route('/replace_zeros', methods=['POST'])
 def replace_zeros():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No data available to process.'})
 
-    df_current = session['df_history'][-1]
+    df_current = data_manager.load_dataframe(history_paths[-1])
     df_cleaned = df_current.replace(0, np.nan)
 
-    session['df_history'].append(df_cleaned)
+    history_key = f'df_history_{len(history_paths)}'
+    data_manager.save_dataframe(df_cleaned, history_key, 'df_history')
+    history_paths.append(history_key)
+    session['df_history_paths'] = history_paths
     session['processing_steps'].append({
         'icon': 'fa-broom',
         'color': 'text-warning',
@@ -246,10 +258,10 @@ def replace_zeros():
         null_mask=session.get('imputed_mask')
     )
     df_before=None
-    if len(session.get('df_history', [])) > 1:
-        df_before = session['df_history'][-2]
+    if len(history_paths) > 1:
+        df_before = data_manager.load_dataframe(history_paths[-2])
     else:
-        df_before = session['df_history'][0]
+        df_before = data_manager.load_dataframe(history_paths[0])
     intensityComparisonPlot = create_intensity_comparison_plot(
         original_df=df_before,
         imputed_df=df_cleaned,
@@ -267,20 +279,21 @@ def replace_zeros():
 
 @processing_bp.route('/normalization')
 def normalization():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please define sample data first')
         return redirect(url_for('analysis.metadata'))
     
-    df_current = session['df_history'][-1]
-    df_before = session['df_history'][-2] if len(session.get('df_history', [])) > 1 else session['df_history'][0]
+    df_current = data_manager.load_dataframe(history_paths[-1])
+    df_before = data_manager.load_dataframe(history_paths[-2]) if len(history_paths) > 1 else data_manager.load_dataframe(history_paths[0])
 
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'))
-
+    plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'), 'Normalization')
+    original_df = data_manager.load_dataframe(history_paths[0])
     return render_template('normalization.html',
-                           original_shape=session['df_history'][0].shape,
+                           original_shape=original_df.shape,
                            current_shape=df_current.shape,
                            processing_steps=session.get('processing_steps', []),
                            plots=plots
@@ -288,27 +301,31 @@ def normalization():
 
 @processing_bp.route('/apply_normalization', methods=['POST'])
 def apply_normalization():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available'})
 
     method = request.json.get('method')
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
 
     try:
-        if method == 'tic':
-            normalized_df = tic_normalization(df)
-        elif method == 'mtic':
-            normalized_df = mtic_normalization(df)
-        elif method == 'median':
-            normalized_df = median_normalization(df)
-        elif method == 'quantile':
-            normalized_df = quantile_normalization(df)
-        elif method == 'pqn':
-            normalized_df = pqn_normalization(df)
-        else:
+        normalization_methods = {
+            'tic': tic_normalization,
+            'mtic': mtic_normalization,
+            'median': median_normalization,
+            'quantile': quantile_normalization,
+            'pqn': pqn_normalization
+        }
+
+        if method not in normalization_methods:
             return jsonify({'error': 'Unknown normalization method'})
 
-        session['df_history'].append(normalized_df)
+        normalized_df = _apply_processing_method(method, normalization_methods[method], df, {})
+
+        history_key = f'df_history_{len(history_paths)}'
+        data_manager.save_dataframe(normalized_df, history_key, 'df_history')
+        history_paths.append(history_key)
+        session['df_history_paths'] = history_paths
         session['processing_steps'].append({
             'icon': 'fa-chart-bar',
             'color': 'text-success',
@@ -316,8 +333,8 @@ def apply_normalization():
         })
         session.modified = True
 
-        df_before = session['df_history'][-2]
-        plots = get_comparison_plots(df_before, normalized_df, 'boxplot', session.get('group_vector'), session.get('group_names'))
+        df_before = data_manager.load_dataframe(history_paths[-2])
+        plots = get_comparison_plots(df_before, normalized_df, 'boxplot', session.get('group_vector'), session.get('group_names'), 'Normalization')
 
         return jsonify({
             'success': True,
@@ -331,20 +348,21 @@ def apply_normalization():
 
 @processing_bp.route('/transformation')
 def transformation():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please define sample data first')
         return redirect(url_for('analysis.metadata'))
     
-    df_current = session['df_history'][-1]
-    df_before = session['df_history'][-2] if len(session.get('df_history', [])) > 1 else session['df_history'][0]
+    df_current = data_manager.load_dataframe(history_paths[-1])
+    df_before = data_manager.load_dataframe(history_paths[-2]) if len(history_paths) > 1 else data_manager.load_dataframe(history_paths[0])
 
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'))
-
+    plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'), 'Transformation')
+    original_df = data_manager.load_dataframe(history_paths[0])
     return render_template('transformation.html',
-                           original_shape=session['df_history'][0].shape,
+                           original_shape=original_df.shape,
                            current_shape=df_current.shape,
                            processing_steps=session.get('processing_steps', []),
                            plots=plots
@@ -352,32 +370,35 @@ def transformation():
 
 @processing_bp.route('/apply_transformation', methods=['POST'])
 def apply_transformation():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available'})
 
     method = request.json.get('method')
     params = request.json.get('params', {})
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
 
     try:
-        if method == 'log2':
-            transformed_df = log2_transform(df, pseudo_count=params.get('pseudo_count'))
-        elif method == 'log10':
-            transformed_df = log10_transform(df, pseudo_count=params.get('pseudo_count'))
-        elif method == 'sqrt':
-            transformed_df = sqrt_transform(df)
-        elif method == 'cube_root':
-            transformed_df = cube_root_transform(df)
-        elif method == 'arcsinh':
-            transformed_df = arcsinh_transform(df, cofactor=params.get('cofactor', 5))
-        elif method == 'glog':
-            transformed_df = glog_transform(df, lamb=params.get('lamb'))
-        elif method == 'yeo_johnson':
-            transformed_df = yeo_johnson_transform(df)
-        else:
+        transformation_methods = {
+            'log2': (log2_transform, {'pseudo_count': params.get('pseudo_count')}),
+            'log10': (log10_transform, {'pseudo_count': params.get('pseudo_count')}),
+            'sqrt': (sqrt_transform, {}),
+            'cube_root': (cube_root_transform, {}),
+            'arcsinh': (arcsinh_transform, {'cofactor': params.get('cofactor', 5)}),
+            'glog': (glog_transform, {'lamb': params.get('lamb')}),
+            'yeo_johnson': (yeo_johnson_transform, {})
+        }
+
+        if method not in transformation_methods:
             return jsonify({'error': 'Unknown transformation method'})
 
-        session['df_history'].append(transformed_df)
+        method_func, method_params = transformation_methods[method]
+        transformed_df = _apply_processing_method(method, method_func, df, method_params)
+
+        history_key = f'df_history_{len(history_paths)}'
+        data_manager.save_dataframe(transformed_df, history_key, 'df_history')
+        history_paths.append(history_key)
+        session['df_history_paths'] = history_paths
         session['processing_steps'].append({
             'icon': 'fa-exchange-alt',
             'color': 'text-info',
@@ -385,9 +406,9 @@ def apply_transformation():
         })
         session.modified = True
         
-        df_before = session['df_history'][-2]
+        df_before = data_manager.load_dataframe(history_paths[-2])
         plot_type = request.json.get('plot_type', 'boxplot')
-        plots = get_comparison_plots(df_before, transformed_df, plot_type, session.get('group_vector'), session.get('group_names'))
+        plots = get_comparison_plots(df_before, transformed_df, plot_type, session.get('group_vector'), session.get('group_names'), 'Transformation')
 
         return jsonify({
             'success': True,
@@ -401,20 +422,21 @@ def apply_transformation():
 
 @processing_bp.route('/scaling')
 def scaling():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please define sample data first')
         return redirect(url_for('analysis.metadata'))
     
-    df_current = session['df_history'][-1]
-    df_before = session['df_history'][-2] if len(session.get('df_history', [])) > 1 else session['df_history'][0]
+    df_current = data_manager.load_dataframe(history_paths[-1])
+    df_before = data_manager.load_dataframe(history_paths[-2]) if len(history_paths) > 1 else data_manager.load_dataframe(history_paths[0])
 
     if 'processing_steps' not in session or not session['processing_steps']:
         session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
 
-    plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'))
-
+    plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'), 'Scaling')
+    original_df = data_manager.load_dataframe(history_paths[0])
     return render_template('scaling.html',
-                           original_shape=session['df_history'][0].shape,
+                           original_shape=original_df.shape,
                            current_shape=df_current.shape,
                            processing_steps=session.get('processing_steps', []),
                            plots=plots
@@ -422,30 +444,34 @@ def scaling():
 
 @processing_bp.route('/apply_scaling', methods=['POST'])
 def apply_scaling():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available'})
 
     method = request.json.get('method')
     params = request.json.get('params', {})
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
 
     try:
-        if method == 'standard':
-            scaled_df = standard_scaling(df, with_mean=params.get('with_mean', True), with_std=params.get('with_std', True))
-        elif method == 'minmax':
-            scaled_df = minmax_scaling(df, feature_range=tuple(params.get('feature_range', [0, 1])))
-        elif method == 'pareto':
-            scaled_df = pareto_scaling(df)
-        elif method == 'range':
-            scaled_df = range_scaling(df)
-        elif method == 'robust':
-            scaled_df = robust_scaling(df)
-        elif method == 'vast':
-            scaled_df = vast_scaling(df)
-        else:
+        scaling_methods = {
+            'standard': (standard_scaling, {'with_mean': params.get('with_mean', True), 'with_std': params.get('with_std', True)}),
+            'minmax': (minmax_scaling, {'feature_range': tuple(params.get('feature_range', [0, 1]))}),
+            'pareto': (pareto_scaling, {}),
+            'range': (range_scaling, {}),
+            'robust': (robust_scaling, {}),
+            'vast': (vast_scaling, {})
+        }
+
+        if method not in scaling_methods:
             return jsonify({'error': 'Unknown scaling method'})
 
-        session['df_history'].append(scaled_df)
+        method_func, method_params = scaling_methods[method]
+        scaled_df = _apply_processing_method(method, method_func, df, method_params)
+
+        history_key = f'df_history_{len(history_paths)}'
+        data_manager.save_dataframe(scaled_df, history_key, 'df_history')
+        history_paths.append(history_key)
+        session['df_history_paths'] = history_paths
         session['processing_steps'].append({
             'icon': 'fa-compress-arrows-alt',
             'color': 'text-warning',
@@ -453,9 +479,9 @@ def apply_scaling():
         })
         session.modified = True
         
-        df_before = session['df_history'][-2]
+        df_before = data_manager.load_dataframe(history_paths[-2])
         plot_type = request.json.get('plot_type', 'boxplot')
-        plots = get_comparison_plots(df_before, scaled_df, plot_type, session.get('group_vector'), session.get('group_names'))
+        plots = get_comparison_plots(df_before, scaled_df, plot_type, session.get('group_vector'), session.get('group_names'), 'Scaling')
 
         return jsonify({
             'success': True,
@@ -469,19 +495,21 @@ def apply_scaling():
 
 @processing_bp.route('/reset_sample_step', methods=['POST'])
 def reset_sample_step():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available to reset'})
 
     context = request.json.get('context', 'imputation') # Default to imputation for safety
 
-    if len(session['df_history']) > 1:
-        session['df_history'].pop()
+    if len(history_paths) > 1:
+        key_to_delete = history_paths.pop()
+        data_manager.delete_dataframe(key_to_delete)
         if session.get('processing_steps'):
             session['processing_steps'].pop()
     
     session.modified = True
 
-    df_current = session['df_history'][-1]
+    df_current = data_manager.load_dataframe(history_paths[-1])
     response_data = {
         'success': True,
         'message': 'Last processing step undone.',
@@ -498,67 +526,21 @@ def reset_sample_step():
             imputed=False
         )
         df_before=None
-        if len(session.get('df_history', [])) > 1:
-            df_before = session['df_history'][-2]
+        if len(history_paths) > 1:
+            df_before = data_manager.load_dataframe(history_paths[-2])
         else:
-            df_before = session['df_history'][0]
+            df_before = data_manager.load_dataframe(history_paths[0])
         response_data['intensity_comparison_plot'] = create_intensity_comparison_plot(
             original_df=df_before,
             imputed_df=df_current,
             log_transform=True
         )
-    elif context == 'normalization':
+    elif context in ['normalization', 'transformation', 'scaling']:
         df_before=None
-        if len(session.get('df_history', [])) > 1:
-            df_before = session['df_history'][-2]
+        if len(history_paths) > 1:
+            df_before = data_manager.load_dataframe(history_paths[-2])
         else:
-            df_before = session['df_history'][0]
-        response_data['plots'] = get_normalization_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
-    elif context == 'transformation':
-        df_before=None
-        if len(session.get('df_history', [])) > 1:
-            df_before = session['df_history'][-2]
-        else:
-            df_before = session['df_history'][0]
-        response_data['plots'] = get_transformation_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
-    elif context == 'scaling':
-        df_before=None
-        if len(session.get('df_history', [])) > 1:
-            df_before = session['df_history'][-2]
-        else:
-            df_before = session['df_history'][0]
-        response_data['plots'] = get_scaling_plots(df_before, df_current, group_vector=session.get('group_vector'), group_names=session.get('group_names'))
+            df_before = data_manager.load_dataframe(history_paths[0])
+        response_data['plots'] = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'), context.title())
 
     return jsonify(response_data)
-
-def get_normalization_plots(df_before, df_after, plot_type='boxplot', group_vector=None, group_names=None):
-    """Helper function to generate all plots for the normalization page."""
-    plots = {}
-    # Before normalization
-    plots['dist_before'] = create_boxplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
-    
-    # After normalization
-    plots['dist_after'] = create_boxplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
-    return plots
-
-def get_transformation_plots(df_before, df_after, plot_type='boxplot', group_vector=None, group_names=None):
-    """Helper function to generate all plots for the transformation page."""
-    plots = {}
-    plots['dist_before'] = create_boxplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
-    
-    plots['dist_after'] = create_boxplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
-    return plots
-
-def get_scaling_plots(df_before, df_after, plot_type='boxplot', group_vector=None, group_names=None):
-    """Helper function to generate all plots for the scaling page."""
-    plots = {}
-    plots['dist_before'] = create_boxplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_before, 'Before Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_before'] = create_pca_plot(df_before, 'PCA Before Processing', group_vector=group_vector, group_names=group_names)
-    
-    plots['dist_after'] = create_boxplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names) if plot_type == 'boxplot' else create_violinplot(df_after, 'After Processing', group_vector=group_vector, group_names=group_names)
-    plots['pca_after'] = create_pca_plot(df_after, 'PCA After Processing', group_vector=group_vector, group_names=group_names)
-    return plots
