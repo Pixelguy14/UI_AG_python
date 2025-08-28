@@ -445,6 +445,8 @@
       document.body.addEventListener('htmx:beforeRequest', function(evt) {
           // Add loading class to the triggering element
           evt.detail.elt.classList.add('htmx-request');
+          // Store start time for performance measurement
+          evt.detail.xhr.startTime = performance.now();
       });
 
       document.body.addEventListener('htmx:afterRequest', function(evt) {
@@ -466,6 +468,13 @@
               evt.detail.target.style.opacity = '1';
               evt.detail.target.style.transform = 'translateY(0)';
               evt.detail.target.classList.add('fade-in');
+          }
+
+          // Calculate and log HTMX load time
+          const startTime = evt.detail.xhr.startTime;
+          if (startTime) {
+              const duration = performance.now() - startTime;
+              console.log(`HTMX content loaded and swapped in ${duration.toFixed(2)}ms`);
           }
       });
 
@@ -582,6 +591,14 @@
     {% endif %}
 {% endwith %}
     
+    <script>
+        window.addEventListener('load', () => {
+            const [performanceNavigationTiming] = performance.getEntriesByType("navigation");
+            if (performanceNavigationTiming) {
+                console.log(`Page fully loaded in: ${performanceNavigationTiming.duration.toFixed(2)}ms`);
+            }
+        });
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -37,8 +37,8 @@ def run_t_test(
     group2_data = data[group2_cols_aligned]
 
     # Log2FC with consistent samples & NaN skipping
-    mean_group1 = group1_data.mean(axis=1, skipna=True)
-    mean_group2 = group2_data.mean(axis=1, skipna=True)
+    mean_group1 = group1_data.mean(axis=1, skipna=True) # type: ignore
+    mean_group2 = group2_data.mean(axis=1, skipna=True) # type: ignore
     epsilon = 1
     log2fc = np.log2(mean_group2 + epsilon) - np.log2(mean_group1 + epsilon)
 
@@ -46,11 +46,11 @@ def run_t_test(
     stat, p_val = test_func(group1_data, group2_data, axis=1, nan_policy='omit')
 
     # Handle zero-variance cases
-    var_group1 = group1_data.var(axis=1, skipna=True)
-    var_group2 = group2_data.var(axis=1, skipna=True)
+    var_group1 = group1_data.var(axis=1, skipna=True) # type: ignore
+    var_group2 = group2_data.var(axis=1, skipna=True) # type: ignore
     mask_both_zero_var = (var_group1 == 0) & (var_group2 == 0)
-    if mask_both_zero_var.any():
-        mean_equal = np.isclose(mean_group1, mean_group2, atol=1e-8)
+    if mask_both_zero_var.any(): # type: ignore
+        mean_equal = np.isclose(mean_group1, mean_group2, atol=1e-8) # type: ignore
         p_val = p_val.copy()  # Avoid mutation issues
         p_val[mask_both_zero_var & mean_equal] = 1.0
         p_val[mask_both_zero_var & ~mean_equal] = 0.0
@@ -67,8 +67,8 @@ def run_wilcoxon_rank_sum(
     group2_mask = data[group2_cols].notna()
     
     # Precompute medians for log2FC
-    median_group1 = data[group1_cols].median(axis=1, skipna=True)
-    median_group2 = data[group2_cols].median(axis=1, skipna=True)
+    median_group1 = data[group1_cols].median(axis=1, skipna=True) # type: ignore
+    median_group2 = data[group2_cols].median(axis=1, skipna=True) # type: ignore
     epsilon = 1
     log2fc = np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon)
 
@@ -126,7 +126,7 @@ def run_anova(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> pd.DataFra
             continue
         
         # Check for zero variance within any group
-        if any(np.var(g) == 0 for g in group_arrays):
+        if any(np.var(g) == 0 for g in group_arrays): # type: ignore
             # If any group has zero variance, check if all means are equal
             if all(np.isclose(np.mean(g), np.mean(group_arrays[0])) for g in group_arrays):
                 p_values[i] = 1.0 # All means are equal, p-value is 1
@@ -186,13 +186,13 @@ def format_anova_results_html(
         if pd.notna(p_val) and p_val < alpha:
             try:
                 groups_data = [row[cols].dropna() for cols in group_map.values()]
-                all_data = np.concatenate(groups_data)
-                group_labels = np.concatenate([[name] * len(g) for name, g in zip(group_map.keys(), groups_data)])
+                all_data = np.concatenate([g.to_numpy(dtype=float) for g in groups_data])
+                group_labels = np.concatenate([[name] * len(g) for name, g in zip(group_map.keys(), groups_data)]) # type: ignore
                 
                 # Add check for sufficient samples for Tukey HSD
                 if any(len(g) < 2 for g in groups_data):
                     post_hoc_html = "<div class='text-warning'>Tukey HSD requires at least 2 samples per group.</div>"
-                elif len(np.unique(group_labels)) > 1:
+                elif len(np.unique(group_labels)) > 1: # type: ignore
                     tukey_res = pairwise_tukeyhsd(all_data, group_labels, alpha=alpha)
                     post_hoc_df = pd.DataFrame(data=tukey_res._results_table.data[1:], columns=tukey_res._results_table.data[0])
                     
@@ -211,7 +211,7 @@ def format_anova_results_html(
         for name, cols in group_map.items():
             g = row[cols].dropna()
             if len(g) > 0:
-                stats_html_items.append(f"<li><b>{name}:</b> mean={np.mean(g):.3f}, std={np.std(g):.3f}</li>")
+                stats_html_items.append(f"<li><b>{name}:</b> mean={np.mean(g.to_numpy(dtype=float)):.3f}, std={np.std(g.to_numpy(dtype=float)):.3f}</li>")
         group_stats_html = f"<ul class='list-unstyled mb-0'>{''.join(stats_html_items)}</ul>"
 
         formatted_results.append({
@@ -232,7 +232,7 @@ def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> p
         if any(len(g) < 1 for g in groups_data):
             return np.nan
         
-        if all(np.var(g) == 0 for g in groups_data if len(g) > 0):
+        if all(np.var(g) == 0 for g in groups_data if len(g) > 0): # type: ignore
             return 1.0
 
         try:
@@ -250,20 +250,20 @@ def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> p
         groups_data = [row[cols].dropna() for cols in group_map.values()]
         
         if len(groups_data) == 2: # If exactly two groups, calculate FC between their medians
-            median_group1 = np.median(groups_data[0]) if len(groups_data[0]) > 0 else np.nan
-            median_group2 = np.median(groups_data[1]) if len(groups_data[1]) > 0 else np.nan
+            median_group1 = np.median(groups_data[0].to_numpy(dtype=float)) if len(groups_data[0]) > 0 else np.nan
+            median_group2 = np.median(groups_data[1].to_numpy(dtype=float)) if len(groups_data[1]) > 0 else np.nan
             if pd.isna(median_group1) or pd.isna(median_group2):
                 log2fc_values.append(np.nan)
             else:
                 log2fc_values.append(np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon))
         elif len(groups_data) > 2: # If more than two groups, calculate FC relative to overall median
-            all_vals = np.concatenate([g for g in groups_data if len(g) > 0])
+            all_vals = np.concatenate([g.to_numpy(dtype=float) for g in groups_data if len(g) > 0])
             if len(all_vals) == 0:
                 log2fc_values.append(np.nan)
             else:
                 overall_median = np.median(all_vals)
                 # For simplicity, take the median of the first group vs overall median as a proxy
-                median_first_group = np.median(groups_data[0]) if len(groups_data[0]) > 0 else np.nan
+                median_first_group = np.median(groups_data[0].to_numpy(dtype=float)) if len(groups_data[0]) > 0 else np.nan
                 if pd.isna(median_first_group) or overall_median == 0:
                     log2fc_values.append(np.nan)
                 else:
@@ -361,7 +361,7 @@ def apply_multiple_test_correction(
 ) -> Tuple[pd.Series, pd.Series]:
     # Drop NaNs and non-finite values
     finite_p_values = p_values.dropna()
-    finite_p_values = finite_p_values[np.isfinite(finite_p_values)]
+    finite_p_values = finite_p_values[np.isfinite(finite_p_values)] # type: ignore
     
     if len(finite_p_values) == 0:
         p_adj = pd.Series(index=p_values.index, dtype=float)

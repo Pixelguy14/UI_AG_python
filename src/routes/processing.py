@@ -218,11 +218,21 @@ def apply_imputation():
             log_transform=True
         )
 
+        new_shape = imputed_df.shape
+
+        # Clean up DataFrames from memory
+        del df
+        del imputed_df
+        if 'df_scaled' in locals():
+            del df_scaled
+        if df_before is not None:
+            del df_before
+
         return jsonify({
             'success': True,
             'message': f'Imputation with {method} completed successfully',
             'steps': session['processing_steps'],
-            'new_shape': imputed_df.shape,
+            'new_shape': new_shape,
             'missing_heatmap': updated_heatmap,
             'intensity_comparison_plot': intensityComparisonPlot
         })
@@ -268,10 +278,19 @@ def replace_zeros():
         log_transform=True
     )
 
+    # Get shape before deleting
+    new_shape = df_cleaned.shape
+
+    # Clean up DataFrames from memory
+    del df_current
+    del df_cleaned
+    if df_before is not None:
+        del df_before
+
     return jsonify({
         'success': True,
         'message': 'All zero values have been replaced with NaN.',
-        'new_shape': df_cleaned.shape,
+        'new_shape': new_shape,
         'steps': session['processing_steps'],
         'missing_heatmap': updated_heatmap,
         "intensity_comparison_plot":intensityComparisonPlot
@@ -336,10 +355,18 @@ def apply_normalization():
         df_before = data_manager.load_dataframe(history_paths[-2])
         plots = get_comparison_plots(df_before, normalized_df, 'boxplot', session.get('group_vector'), session.get('group_names'), 'Normalization')
 
+        # Get shape before deleting
+        new_shape = normalized_df.shape
+
+        # Clean up DataFrames from memory
+        del df
+        del normalized_df
+        del df_before
+
         return jsonify({
             'success': True,
             'message': f'{method.upper()} normalization applied successfully.',
-            'new_shape': normalized_df.shape,
+            'new_shape': new_shape,
             'steps': session['processing_steps'],
             'plots': plots
         })
@@ -410,10 +437,18 @@ def apply_transformation():
         plot_type = request.json.get('plot_type', 'boxplot')
         plots = get_comparison_plots(df_before, transformed_df, plot_type, session.get('group_vector'), session.get('group_names'), 'Transformation')
 
+        # Get shape before deleting
+        new_shape = transformed_df.shape
+
+        # Clean up DataFrames from memory
+        del df
+        del transformed_df
+        del df_before
+
         return jsonify({
             'success': True,
             'message': f'{method.replace("_", " ").title()} transformation applied successfully.',
-            'new_shape': transformed_df.shape,
+            'new_shape': new_shape,
             'steps': session['processing_steps'],
             'plots': plots
         })
@@ -483,10 +518,18 @@ def apply_scaling():
         plot_type = request.json.get('plot_type', 'boxplot')
         plots = get_comparison_plots(df_before, scaled_df, plot_type, session.get('group_vector'), session.get('group_names'), 'Scaling')
 
+        # Get shape before deleting
+        new_shape = scaled_df.shape
+
+        # Clean up DataFrames from memory
+        del df
+        del scaled_df
+        del df_before
+
         return jsonify({
             'success': True,
             'message': f'{method.replace("_", " ").title()} scaling applied successfully.',
-            'new_shape': scaled_df.shape,
+            'new_shape': new_shape,
             'steps': session['processing_steps'],
             'plots': plots
         })
@@ -506,7 +549,7 @@ def reset_sample_step():
         data_manager.delete_dataframe(key_to_delete)
         if session.get('processing_steps'):
             session['processing_steps'].pop()
-    
+
     session.modified = True
 
     df_current = data_manager.load_dataframe(history_paths[-1])

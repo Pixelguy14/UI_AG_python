@@ -123,6 +123,7 @@ def summary():
         df_sample = data_manager.load_dataframe(history_paths[-1])
         if df_sample is None:
             flash('Could not load the latest data. Please try uploading the file again.', 'danger')
+            del df
             return redirect(url_for('core.upload_file'))
 
         general_stats = preprocessing_general_dataset_statistics(df_sample)
@@ -170,8 +171,26 @@ def summary():
                 group_names=session.get('group_names')
             )
 
+    general_stats_html = general_stats.to_html(classes='table table-striped')
+
+    # Clean up dataframes from memory
+    if 'df' in locals() and df is not None:
+        del df
+    if 'df_sample' in locals() and df_sample is not None:
+        del df_sample
+    if 'numeric_df' in locals() and numeric_df is not None:
+        del numeric_df
+    if 'corr_matrix' in locals() and corr_matrix is not None:
+        del corr_matrix
+    if 'mean_values' in locals() and mean_values is not None:
+        del mean_values
+    if 'numeric_df_for_boxplot' in locals() and numeric_df_for_boxplot is not None:
+        del numeric_df_for_boxplot
+    if 'general_stats' in locals() and general_stats is not None:
+        del general_stats
+
     return render_template('summary.html', 
-                         general_stats=general_stats.to_html(classes='table table-striped'),
+                         general_stats=general_stats_html,
                          plots=plots)
 
 @core_bp.route('/dataframe')
@@ -182,11 +201,14 @@ def dataframe_view():
         return redirect(url_for('core.upload_file'))
     
     df_html = df.to_html(classes='table table-striped table-hover', table_id='dataframe-table')
+    shape = df.shape
+    columns = df.columns.tolist()
+    del df
     
     return render_template('dataframe.html', 
                          df_html=df_html,
-                         shape=df.shape,
-                         columns=df.columns.tolist())
+                         shape=shape,
+                         columns=columns)
 
 @core_bp.route('/reset')
 def reset():
@@ -264,6 +286,12 @@ def export_dataframe(format, context):
             df.to_excel(writer, index=True)
     
     output.seek(0)
+
+    # Clean up
+    if 'df' in locals() and df is not None:
+        del df
+    if 'metadata_df' in locals() and metadata_df is not None:
+        del metadata_df
 
     return Response(
         output.getvalue(),

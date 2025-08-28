@@ -57,7 +57,9 @@ def _get_column_density_plot(df, column_name):
 @api_bp.route('/column_info/<column_name>')
 def column_info(column_name):
     df = data_manager.load_dataframe('df_main_path')
-    return _get_column_info(df, column_name)
+    result = _get_column_info(df, column_name)
+    del df
+    return result
 
 @api_bp.route('/column_info_analysis/<column_name>')
 def column_info_analysis(column_name):
@@ -268,8 +270,10 @@ def run_permanova_route():
             'p_value': result['p-value']
         }
         session['permanova_results'] = result_summary
+        del df
         return jsonify({'success': True, 'result': result_summary})
     except Exception as e:
+        del df
         return jsonify({'error': f'PERMANOVA failed: {str(e)}'})
 
 @api_bp.route('/clustergram_data', methods=['POST'])
@@ -425,7 +429,7 @@ def clustergram_data():
             'hoverinfo': 'none',
         })
 
-    return jsonify({
+    response_data = {
         'heatmap': heatmap_trace,
         'col_dendro': col_dendro_traces,
         'row_dendro': row_dendro_traces,
@@ -435,7 +439,23 @@ def clustergram_data():
         'heatmap_y': heatmap_y,
         'heatmap_customdata': full_custom_data,
         'metadata_column_names': metadata_column_names
-    })
+    }
+
+    # Clean up all dataframes
+    del differential_analysis_results
+    del results_df
+    del data_df
+    if feature_metadata_df is not None:
+        del feature_metadata_df
+    del significant_features_df
+    del plot_data
+    del numeric_plot_data
+    del plot_data_zscored
+    del plot_data_reordered
+    if 'aligned_metadata' in locals():
+        del aligned_metadata
+
+    return jsonify(response_data)
 
 @api_bp.route('/apply_regex_grouping', methods=['POST'])
 def apply_regex_grouping():

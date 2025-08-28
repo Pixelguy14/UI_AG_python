@@ -69,6 +69,12 @@ def metadata():
         # Create group vector for sample columns only
         group_vector = _create_group_vector(sample_cols, group_assignments, group_names)
         session['group_vector'] = group_vector
+
+        # Clean up dataframes from memory
+        del df
+        del df_metadata
+        del df_sample
+        del df_original
         
         return jsonify({'success': True, 'message': 'Metadata assignments and groups saved successfully'})
     
@@ -255,6 +261,9 @@ def differential_analysis():
     if differential_analysis_results is not None and not differential_analysis_results.empty:
         results_html = differential_analysis_results.to_html(classes='table table-striped table-sm', table_id='resultsTable', escape=False)
     
+    if differential_analysis_results is not None:
+        del differential_analysis_results
+
     return render_template('differential_analysis.html',
                            group_names=group_names,
                            group_vector=group_vector,
@@ -295,6 +304,11 @@ def result_visualization():
     metadata_columns = []
     if metadata_df is not None:
         metadata_columns = metadata_df.columns.tolist()
+
+    del differential_analysis_results
+    del results_df
+    if metadata_df is not None:
+        del metadata_df
 
     return render_template('result_visualization.html', 
                            volcano_plot_json=volcano_plot_json,

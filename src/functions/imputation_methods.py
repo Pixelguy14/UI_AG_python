@@ -13,74 +13,59 @@ from sklearn.linear_model import BayesianRidge, LinearRegression # type: ignore
 # Zero Imputation / N value imputation
 def nImputed(df,n=0):
     # Only alter numerical columns and columns with nan values
-    df_imputed = df.copy()
-    num_cols = df_imputed.select_dtypes(include=np.number).columns
+    num_cols = df.select_dtypes(include=np.number).columns
     
     if num_cols.empty:
-        return df_imputed
+        return df # Return original if no numeric columns
     
     for col in num_cols:
-        if df_imputed[col].isnull().any():
-            df_imputed[col] = df_imputed[col].fillna(n)
+        if df[col].isnull().any():
+            df[col].fillna(n, inplace=True)
 
-    return df_imputed
+    return df
 
 # Half Minimum imputation
 def halfMinimumImputed(df):
-    # Only alter numerical columns and columns with nan values
-    df_imputed = df.copy()
-    num_cols = df_imputed.select_dtypes(include=np.number).columns
-
-    if num_cols.empty:
-        return df_imputed
-
-    for col in num_cols:
-        if df_imputed[col].isnull().any():
-            col_min = df_imputed[col].min()
-
-            if not pd.isna(col_min):
-                imputation_value = col_min / 2
-                df_imputed[col] = df_imputed[col].fillna(imputation_value)
-            else:
-                df_imputed[col] = df_imputed[col].fillna(0) # Fallback if no non-NaN values to get a min from
-                
-    return df_imputed
+    """Replaces NaN with half of the minimum value found in each column."""
+    for col in df.columns:
+        min_val = df[col].min()
+        half_min = min_val / 2
+        df[col].fillna(half_min, inplace=True)
+    return df
 
 # Mean imputation
 def meanImputed(df):
     # Only alter numerical columns and columns with nan values
-    df_imputed = df.copy()
-    num_cols = df_imputed.select_dtypes(include=np.number).columns
+    num_cols = df.select_dtypes(include=np.number).columns
     
     if num_cols.empty:
-        return df_imputed
+        return df
     
     for col in num_cols:
-        col_mean = df_imputed[col].mean()
+        col_mean = df[col].mean()
         if not pd.isna(col_mean):
-            df_imputed[col] = df_imputed[col].fillna(col_mean)
+            df[col].fillna(col_mean, inplace=True)
         else:
-            df_imputed[col] = df_imputed[col].fillna(0) # Fallback if no non-NaN values to get a min from
+            df[col].fillna(0, inplace=True) # Fallback if no non-NaN values to get a min from
 
-    return df_imputed
+    return df
 
 # Median imputation
 def medianImputed(df):
     # Only alter numerical columns and columns with nan values
-    df_imputed = df.copy()
-    num_cols = df_imputed.select_dtypes(include=np.number).columns
+    num_cols = df.select_dtypes(include=np.number).columns
     
     if num_cols.empty:
-        return df_imputed
+        return df
     
     for col in num_cols:
-        col_median = df_imputed[col].median()
+        col_median = df[col].median()
         if not pd.isna(col_median):
-            df_imputed[col] = df_imputed[col].fillna(col_median)
+            df[col].fillna(col_median, inplace=True)
         else:
-            df_imputed[col] = df_imputed[col].fillna(0) # Fallback if no non-NaN values to get a min from
+            df[col].fillna(0, inplace=True) # Fallback if no non-NaN values to get a min from
                 
-    return df_imputed
+    return df
 
 ## Multivariate methods for numerical columns
 

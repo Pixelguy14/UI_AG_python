@@ -341,7 +341,9 @@
                 success: function(response) {
                     if (response.success) {
                         window.showToast('Assignments and groups saved successfully!', 'success');
-                        setTimeout(() => { window.location.href = '/summary'; }, 1000);
+                        setTimeout(() => {
+                            htmx.ajax('GET', '/summary', { target: 'body', swap: 'outerHTML' });
+                        }, 1000);
                     } else {
                         window.showToast('Error saving assignments: ' + response.message, 'danger');
                     }
