@@ -149,6 +149,22 @@
                             No Differential analysis has been applied yet (excluding PERMANOVA).
                         {% endif %}
                     </p>
+                    <hr>
+                    <p class="mb-0">
+                        <strong>Data State:</strong><br>
+                        Log-Transformed: 
+                        {% if is_log_transformed %}
+                            <span class="badge bg-success">On</span>
+                        {% else %}
+                            <span class="badge bg-danger">Off</span>
+                        {% endif %}<br>
+                        Scaled: 
+                        {% if is_scaled %}
+                            <span class="badge bg-success">On</span>
+                        {% else %}
+                            <span class="badge bg-danger">Off</span>
+                        {% endif %}
+                    </p>
                 </div>
             </div>
         </div>

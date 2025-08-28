@@ -3,16 +3,35 @@ import pandas as pd
 
 # Import plot definitions if needed for pre-rendering, e.g., volcano plot
 from ..functions.plot_definitions import create_volcano_plot # type: ignore
+from .. import data_manager
 
 analysis_bp = Blueprint('analysis', __name__, template_folder='../../templates')
 
+def _create_group_vector(sample_cols, group_assignments, group_names):
+    group_vector = {}
+    for col in sample_cols:
+        str_col = str(col) # Ensure key is a string
+        if str_col in group_assignments and group_assignments[str_col]:
+            # Column belongs to multiple groups
+            group_info = {
+                'groups': group_assignments[str_col],
+                'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[str_col]]
+            }
+        else:
+            # Column doesn't belong to any group
+            group_info = {
+                'groups': [],
+                'group_names': []
+            }
+        group_vector[str_col] = group_info
+    return group_vector
+
 @analysis_bp.route('/metadata', methods=['GET', 'POST'])
 def metadata():
-    if session.get('df_main') is None:
+    df = data_manager.load_dataframe('df_main_path')
+    if df is None:
         flash('Please upload a file first')
         return redirect(url_for('core.upload_file'))
-    
-    df = session['df_main']
     
     if request.method == 'POST':
         data = request.json
@@ -32,10 +51,10 @@ def metadata():
         df_original = df.drop(columns=removed_cols).copy() if removed_cols else df.copy()
         
         # Store in session
-        session['df_metadata'] = df_metadata if not df_metadata.empty else None
-        session['df_sample'] = df_sample if not df_sample.empty else None
-        session['df_history'] = [df_sample] if not df_sample.empty else []
-        session['df_main'] = df_original
+        data_manager.save_dataframe(df_metadata, 'df_metadata_path', 'df_metadata')
+        data_manager.save_dataframe(df_sample, 'df_history_0', 'df_history')
+        session['df_history_paths'] = ['df_history_0']
+        data_manager.save_dataframe(df_original, 'df_main_path', 'df_main')
 
         # Reset processing state since sample data might have changed
         session['processing_steps'] = []
@@ -48,24 +67,14 @@ def metadata():
         session['n_groups'] = n_groups
         
         # Create group vector for sample columns only
-        group_vector = {}
-        for col in sample_cols:
-            str_col = str(col) # Ensure key is a string
-            if str_col in group_assignments and group_assignments[str_col]:
-                # Column belongs to multiple groups
-                group_info = {
-                    'groups': group_assignments[str_col],
-                    'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[str_col]]
-                }
-            else:
-                # Column doesn't belong to any group
-                group_info = {
-                    'groups': [],
-                    'group_names': []
-                }
-            group_vector[str_col] = group_info
-        
+        group_vector = _create_group_vector(sample_cols, group_assignments, group_names)
         session['group_vector'] = group_vector
+
+        # Clean up dataframes from memory
+        del df
+        del df_metadata
+        del df_sample
+        del df_original
         
         return jsonify({'success': True, 'message': 'Metadata assignments and groups saved successfully'})
     
@@ -73,10 +82,15 @@ def metadata():
     existing_metadata = []
     existing_sample = []
     
-    if session.get('df_metadata') is not None and not session.get('df_metadata').empty:
-        existing_metadata = session['df_metadata'].columns.tolist()
-    if session.get('df_sample') is not None and not session.get('df_sample').empty:
-        existing_sample = session['df_sample'].columns.tolist()
+    df_metadata = data_manager.load_dataframe('df_metadata_path')
+    if df_metadata is not None and not df_metadata.empty:
+        existing_metadata = df_metadata.columns.tolist()
+    
+    history_paths = session.get('df_history_paths', [])
+    if history_paths:
+        df_sample_initial = data_manager.load_dataframe(history_paths[0])
+        if df_sample_initial is not None and not df_sample_initial.empty:
+            existing_sample = df_sample_initial.columns.tolist()
     
     return render_template('metadata.html', 
                          columns=df.columns.tolist(),
@@ -147,8 +161,8 @@ def view_groups():
 @analysis_bp.route('/update_groups', methods=['POST'])
 def update_groups():
     """Update group assignments without resetting data processing."""
-    df_sample = session.get('df_sample')
-    if df_sample is None or df_sample.empty:
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
 
     data = request.json
@@ -164,22 +178,9 @@ def update_groups():
     session['group_regexes'] = group_regexes
 
     # Recreate group vector
-    sample_cols = session['df_sample'].columns.tolist()
-    group_vector = {}
-    for col in sample_cols:
-        str_col = str(col) # Ensure key is a string
-        if str_col in group_assignments and group_assignments[str_col]:
-            group_info = {
-                'groups': group_assignments[str_col],
-                'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[str_col]]
-            }
-        else:
-            group_info = {
-                'groups': [],
-                'group_names': []
-            }
-        group_vector[str_col] = group_info
-    
+    df_sample_initial = data_manager.load_dataframe(history_paths[0])
+    sample_cols = df_sample_initial.columns.tolist()
+    group_vector = _create_group_vector(sample_cols, group_assignments, group_names)
     session['group_vector'] = group_vector
     session.modified = True
 
@@ -187,11 +188,12 @@ def update_groups():
 
 @analysis_bp.route('/analysis')
 def analysis():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please process sample data first')
         return redirect(url_for('processing.imputation'))
     
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
     df_html = df.to_html(classes='table table-striped table-hover', table_id='analysis-table')
     
     return render_template('analysis.html', 
@@ -201,11 +203,11 @@ def analysis():
 
 @analysis_bp.route('/multivariate_analysis')
 def multivariate_analysis():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please process sample data first')
         return redirect(url_for('processing.imputation'))
 
-    df_history = session.get('df_history', [])
     processing_steps = session.get('processing_steps', [])
 
     history_options = []
@@ -214,26 +216,24 @@ def multivariate_analysis():
 
     return render_template('multivariate_analysis.html',
                            history_options=history_options,
-                           selected_history_index=len(df_history) - 1)
+                           selected_history_index=len(history_paths) - 1)
 
 @analysis_bp.route('/comparison')
 def comparison():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please define sample data first')
         return redirect(url_for('analysis.metadata'))
     
-    df_original = session['df_sample']
-    df_history = session.get('df_history', [])
+    df_original = data_manager.load_dataframe(history_paths[0])
     processing_steps = session.get('processing_steps', [])
 
     history_options = []
-    if len(df_history) > 1:
+    if len(history_paths) > 1:
         for i, step in enumerate(processing_steps):
             history_options.append((i + 1, step['message']))
 
-    df_processed = df_history[-1]
-    # session['comparison_original_df'] = df_original
-    # session['comparison_processed_df'] = df_processed
+    df_processed = data_manager.load_dataframe(history_paths[-1])
     processed_html = df_processed.to_html(classes='table table-striped table-sm', table_id='processed-table')
     original_html = df_original.to_html(classes='table table-striped table-sm', table_id='original-table')
 
@@ -243,11 +243,12 @@ def comparison():
                          original_shape=df_original.shape,
                          processed_shape=df_processed.shape,
                          history_options=history_options,
-                         selected_history_index=len(df_history) - 1)
+                         selected_history_index=len(history_paths) - 1)
 
 @analysis_bp.route('/differential_analysis')
 def differential_analysis():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         flash('Please process sample data first')
         return redirect(url_for('processing.imputation'))
     
@@ -256,10 +257,13 @@ def differential_analysis():
     
     # Check for existing results in session
     results_html = None
-    if session.get('differential_analysis_results') is not None and not session['differential_analysis_results'].empty:
-        results_df = session['differential_analysis_results']
-        results_html = results_df.to_html(classes='table table-striped table-sm', table_id='resultsTable', escape=False)
+    differential_analysis_results = data_manager.load_dataframe('differential_analysis_results_path')
+    if differential_analysis_results is not None and not differential_analysis_results.empty:
+        results_html = differential_analysis_results.to_html(classes='table table-striped table-sm', table_id='resultsTable', escape=False)
     
+    if differential_analysis_results is not None:
+        del differential_analysis_results
+
     return render_template('differential_analysis.html',
                            group_names=group_names,
                            group_vector=group_vector,
@@ -268,25 +272,28 @@ def differential_analysis():
 
 @analysis_bp.route('/result_visualization')
 def result_visualization():
-    if 'differential_analysis_results' not in session or session['differential_analysis_results'] is None or session['differential_analysis_results'].empty:
+    differential_analysis_results = data_manager.load_dataframe('differential_analysis_results_path')
+    if differential_analysis_results is None or differential_analysis_results.empty:
         flash('Please run a differential analysis first.', 'warning')
         return redirect(url_for('analysis.differential_analysis'))
 
-    results_df = session['differential_analysis_results']
+    results_df = differential_analysis_results
     
-    # Calculate max features for clustergram
+    # Determine which p-value column to use
     p_value_col = 'p_adj' if 'p_adj' in results_df.columns else 'p_value'
+    
+    # Determine significant features
     if 'rejected' in results_df.columns:
         significant_features_df = results_df[results_df['rejected']]
     else:
         significant_features_df = results_df[results_df[p_value_col] < 0.05]
+    
     max_features = len(significant_features_df)
 
     metadata_df = None
-    if session.get('df_meta_thd') is not None and not session.get('df_meta_thd').empty:
-        metadata_df = session.get('df_meta_thd')
-    elif session.get('df_metadata') is not None and not session.get('df_metadata').empty:
-        metadata_df = session.get('df_metadata')
+    metadata_df = data_manager.load_dataframe('df_meta_thd_path')
+    if metadata_df is None or metadata_df.empty:
+        metadata_df = data_manager.load_dataframe('df_metadata_path')
     
     volcano_plot_json = create_volcano_plot(
         results_df=results_df,
@@ -297,6 +304,11 @@ def result_visualization():
     metadata_columns = []
     if metadata_df is not None:
         metadata_columns = metadata_df.columns.tolist()
+
+    del differential_analysis_results
+    del results_df
+    if metadata_df is not None:
+        del metadata_df
 
     return render_template('result_visualization.html', 
                            volcano_plot_json=volcano_plot_json,

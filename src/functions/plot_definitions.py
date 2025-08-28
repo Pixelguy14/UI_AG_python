@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go # type: ignore
@@ -771,7 +772,7 @@ def create_oplsda_plot(df, title, group_vector=None, group_names=None):
 
 def create_volcano_plot(
     results_df: pd.DataFrame,
-    metadata_df: pd.DataFrame = None,
+    metadata_df: Optional[pd.DataFrame] = None,
     p_value_col: str = 'p_adj',
     p_thresh: float = 0.05,
     fc_thresh: float = 1.0
@@ -807,18 +808,22 @@ def create_volcano_plot(
         )
 
     # Fallback to p_value if specified column missing
-    if p_value_col not in results_df.columns:
-        p_value_col = 'p_value' if 'p_value' in results_df.columns else None
+    p_col = p_value_col
+    if p_col not in results_df.columns:
+        p_col = 'p_value' if 'p_value' in results_df.columns else None
 
-    if not p_value_col:
+    if not p_col:
         return json.dumps(
             _create_empty_plot_with_message("Volcano Plot", "No valid p-value column found"),
             cls=plotly.utils.PlotlyJSONEncoder
         )
-
+    
+    # Explicitly cast p_col to str for mypy
+    p_col_str: str = p_col  # type: ignore # mypy doesn't like direct cast from Optional[str] to str
+    
     # Create working copy and clean data
-    plot_data = results_df[[effect_size_col, p_value_col]].copy()
-    plot_data[p_value_col] = pd.to_numeric(plot_data[p_value_col], errors='coerce')
+    plot_data = results_df[[effect_size_col, p_col_str]].copy()
+    plot_data[p_col_str] = pd.to_numeric(plot_data[p_col_str], errors='coerce')
     plot_data[effect_size_col] = pd.to_numeric(plot_data[effect_size_col], errors='coerce')
     plot_data.dropna(inplace=True)
 
@@ -829,18 +834,18 @@ def create_volcano_plot(
         )
 
     # Handle zero p-values
-    plot_data['p_processed'] = plot_data[p_value_col].replace(0, np.finfo(float).eps)
+    plot_data['p_processed'] = plot_data[p_col_str].replace(0, np.finfo(float).eps)
     plot_data['neg_log_p'] = -np.log10(plot_data['p_processed'])
 
     # Determine significance
     if symmetric:  # log2FC (two-tailed)
         plot_data['significant'] = (
-            (plot_data[p_value_col] < p_thresh) & 
+            (plot_data[p_col_str] < p_thresh) & 
             (plot_data[effect_size_col].abs() > fc_thresh)
         )
     else:  # eta_squared (one-tailed)
         plot_data['significant'] = (
-            (plot_data[p_value_col] < p_thresh) & 
+            (plot_data[p_col_str] < p_thresh) & 
             (plot_data[effect_size_col] > fc_thresh)
         )
 
@@ -850,7 +855,7 @@ def create_volcano_plot(
         hover_text = [
             f"<b>Feature:</b> {idx}",
             f"<b>{xaxis_title}:</b> {row[effect_size_col]:.3f}",
-            f"<b>p-value:</b> {row[p_value_col]:.2e}",
+            f"<b>p-value:</b> {row[p_col_str]:.2e}",
             f"<b>-log₁₀(p):</b> {row['neg_log_p']:.1f}"
         ]
         

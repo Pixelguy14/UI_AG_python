@@ -14,14 +14,13 @@ from ..functions.statistical_tests import ( # type: ignore
     run_t_test, run_wilcoxon_rank_sum, run_anova, run_kruskal_wallis,
     run_linear_model, run_permanova, apply_multiple_test_correction, format_anova_results_html
 )
+from .. import data_manager
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
-@api_bp.route('/column_info/<column_name>')
-def column_info(column_name):
-    if session.get('df_main') is None:
+def _get_column_info(df, column_name):
+    if df is None:
         return jsonify({'error': 'No data loaded'})
-    df = session['df_main']
     if column_name not in df.columns:
         return jsonify({'error': 'Column not found'})
     col_data = df[[column_name]]
@@ -38,74 +37,61 @@ def column_info(column_name):
         'stats': stats.T.to_html(classes='table table-sm'),
         'null_plot': null_plot
     })
+
+def _get_column_density_plot(df, column_name):
+    if df is None:
+        return jsonify({'error': 'No data loaded'})
+    if column_name not in df.columns:
+        return jsonify({'error': 'Column not found'})
+    col_stats_data = df[[column_name]]
+    stats = preprocessing_summary_perVariable(col_stats_data)
+    col_plot_data = df[column_name].dropna()
+    if col_plot_data.empty:
+        return jsonify({'error': 'No data available for this column'})
+    density_plot = create_density_plot(col_plot_data, column_name)
+    return jsonify({
+        'stats': stats.T.to_html(classes='table table-sm'),
+        'density_plot': density_plot
+    })
+
+@api_bp.route('/column_info/<column_name>')
+def column_info(column_name):
+    df = data_manager.load_dataframe('df_main_path')
+    result = _get_column_info(df, column_name)
+    del df
+    return result
 
 @api_bp.route('/column_info_analysis/<column_name>')
 def column_info_analysis(column_name):
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No data loaded'})
-    df = session['df_history'][-1]
-    if column_name not in df.columns:
-        return jsonify({'error': 'Column not found'})
-    col_data = df[[column_name]]
-    stats = preprocessing_summary_perVariable(col_data)
-    total_elements = len(col_data)
-    total_nulls = col_data.isnull().sum().sum()
-    total_non_nulls = total_elements - total_nulls
-    null_plot = create_pie_chart(
-        labels=['Null Values', 'Non-Null Values'],
-        values=[total_nulls, total_non_nulls],
-        title=f'Null Distribution - {column_name}'
-    )
-    return jsonify({
-        'stats': stats.T.to_html(classes='table table-sm'),
-        'null_plot': null_plot
-    })
+    df = data_manager.load_dataframe(history_paths[-1])
+    return _get_column_info(df, column_name)
 
 @api_bp.route('/column_density_plot/<column_name>')
 def column_density_plot(column_name):
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No data loaded'})
-    df = session['df_history'][-1]
-    if column_name not in df.columns:
-        return jsonify({'error': 'Column not found'})
-    col_stats_data = df[[column_name]]
-    stats = preprocessing_summary_perVariable(col_stats_data)
-    col_plot_data = df[column_name].dropna()
-    if col_plot_data.empty:
-        return jsonify({'error': 'No data available for this column'})
-    density_plot = create_density_plot(col_plot_data, column_name)
-    return jsonify({
-        'stats': stats.T.to_html(classes='table table-sm'),
-        'density_plot': density_plot
-    })
+    df = data_manager.load_dataframe(history_paths[-1])
+    return _get_column_density_plot(df, column_name)
 
 @api_bp.route('/column_density_plot_main/<column_name>')
 def column_density_plot_main(column_name):
-    if session.get('df_main') is None:
-        return jsonify({'error': 'No data loaded'})
-    df = session['df_main']
-    if column_name not in df.columns:
-        return jsonify({'error': 'Column not found'})
-    col_stats_data = df[[column_name]]
-    stats = preprocessing_summary_perVariable(col_stats_data)
-    col_plot_data = df[column_name].dropna()
-    if col_plot_data.empty:
-        return jsonify({'error': 'No data available for this column'})
-    density_plot = create_density_plot(col_plot_data, column_name)
-    return jsonify({
-        'stats': stats.T.to_html(classes='table table-sm'),
-        'density_plot': density_plot
-    })
+    df = data_manager.load_dataframe('df_main_path')
+    return _get_column_density_plot(df, column_name)
 
 @api_bp.route('/distribution_plot/<plot_type>/<context>', methods=['GET'])
 def get_distribution_plot(plot_type, context):
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No data available'})
     
     if context == 'before':
-        df_sample = session['df_history'][-2] if len(session['df_history']) > 1 else session['df_history'][0]
+        df_sample = data_manager.load_dataframe(history_paths[-2]) if len(history_paths) > 1 else data_manager.load_dataframe(history_paths[0])
     else:
-        df_sample = session['df_history'][-1]
+        df_sample = data_manager.load_dataframe(history_paths[-1])
     
     numeric_df = df_sample.select_dtypes(include=[np.number])
     if numeric_df.empty:
@@ -126,26 +112,29 @@ def get_distribution_plot(plot_type, context):
 
 @api_bp.route('/metadata_columns')
 def get_metadata_columns():
-    if session.get('df_metadata') is not None:
-        return jsonify({'columns': session['df_metadata'].columns.tolist()})
+    df_metadata = data_manager.load_dataframe('df_metadata_path')
+    if df_metadata is not None:
+        return jsonify({'columns': df_metadata.columns.tolist()})
     return jsonify({'columns': []})
 
 @api_bp.route('/pca_plot/<int:history_index>')
 def get_pca_plot(history_index):
-    if not session.get('df_history') or history_index >= len(session['df_history']):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
-    df = session['df_history'][history_index]
+    df = data_manager.load_dataframe(history_paths[history_index])
     plot = create_pca_plot(df, 'PCA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
     return jsonify({'plot': plot})
 
 @api_bp.route('/hca_plot', methods=['POST'])
 def get_hca_plot():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'Invalid history index'})
     data = request.json
     distance_metric = data.get('distance_metric', 'euclidean')
     linkage_method = data.get('linkage_method', 'average')
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
     plot = create_hca_plot(df, 'HCA Plot', 
                            group_vector=session.get('group_vector'), 
                            group_names=session.get('group_names'),
@@ -155,27 +144,29 @@ def get_hca_plot():
 
 @api_bp.route('/plsda_plot/<int:history_index>')
 def get_plsda_plot(history_index):
-    if not session.get('df_history') or history_index >= len(session['df_history']):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
-    df = session['df_history'][history_index]
+    df = data_manager.load_dataframe(history_paths[history_index])
     plot = create_plsda_plot(df, 'PLS-DA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
     return jsonify({'plot': plot})
 
 @api_bp.route('/oplsda_plot/<int:history_index>')
 def get_oplsda_plot(history_index):
-    if not session.get('df_history') or history_index >= len(session['df_history']):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
-    df = session['df_history'][history_index]
+    df = data_manager.load_dataframe(history_paths[history_index])
     plot = create_oplsda_plot(df, 'OPLS-DA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
     return jsonify({'plot': plot})
 
 @api_bp.route('/comparison_data/<int:history_index>')
 def get_comparison_data(history_index):
-    if not session.get('df_history') or history_index >= len(session['df_history']):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
 
-    df_processed = session['df_history'][history_index]
-    # session['comparison_processed_df'] = df_processed
+    df_processed = data_manager.load_dataframe(history_paths[history_index])
     processed_html = df_processed.to_html(classes='table table-striped table-sm', table_id='processed-table')
 
     return jsonify({
@@ -185,7 +176,8 @@ def get_comparison_data(history_index):
 
 @api_bp.route('/run_differential_analysis', methods=['POST'])
 def run_differential_analysis():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available'})
 
     data = request.json
@@ -195,7 +187,7 @@ def run_differential_analysis():
     paired_map = data.get('paired_map')
     formula = data.get('formula')
 
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
     df.columns = df.columns.map(str) # Ensure df columns are strings
     group_vector = session['group_vector']
     results_df = pd.DataFrame()
@@ -237,7 +229,7 @@ def run_differential_analysis():
             if not formula:
                 return jsonify({'error': 'Linear model requires a formula.'})
             # Note: The run_linear_model function expects the metadata dataframe
-            metadata_df = session.get('df_metadata')
+            metadata_df = data_manager.load_dataframe('df_metadata_path')
             if metadata_df is None:
                  return jsonify({'error': 'Linear models require metadata with covariates.'})
             results_df = run_linear_model(df, formula, metadata_df)
@@ -251,25 +243,24 @@ def run_differential_analysis():
             results_df['p_adj'] = p_adj
             results_df['rejected'] = rejected
 
-        session['differential_analysis_results'] = results_df
+        data_manager.save_dataframe(results_df, 'differential_analysis_results_path', 'differential_analysis_results')
         session['latest_differential_analysis_method'] = test_type.replace("_", " ").title()
-        # print(results_df.head(10))
         return jsonify({'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False)})
 
     except Exception as e:
-        # logging.error(f"Differential analysis failed: {e}", exc_info=True)
         return jsonify({'error': f'An error occurred during analysis: {str(e)}'})
 
 @api_bp.route('/run_permanova', methods=['POST'])
 def run_permanova_route():
-    if not session.get('df_history'):
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
         return jsonify({'error': 'No sample data available'})
 
     data = request.json
     distance_metric = data.get('distance_metric', 'euclidean')
     permutations = int(data.get('permutations', 999))
 
-    df = session['df_history'][-1]
+    df = data_manager.load_dataframe(history_paths[-1])
     group_vector = session['group_vector']
 
     try:
@@ -279,14 +270,16 @@ def run_permanova_route():
             'p_value': result['p-value']
         }
         session['permanova_results'] = result_summary
+        del df
         return jsonify({'success': True, 'result': result_summary})
     except Exception as e:
-        # logging.error(f"PERMANOVA analysis failed: {e}", exc_info=True)
+        del df
         return jsonify({'error': f'PERMANOVA failed: {str(e)}'})
 
 @api_bp.route('/clustergram_data', methods=['POST'])
 def clustergram_data():
-    if 'differential_analysis_results' not in session or session['differential_analysis_results'].empty:
+    differential_analysis_results = data_manager.load_dataframe('differential_analysis_results_path')
+    if differential_analysis_results is None or differential_analysis_results.empty:
         return jsonify({'error': 'No analysis results found'}), 404
 
     data = request.json
@@ -296,8 +289,9 @@ def clustergram_data():
     y_axis_label = data.get('y_axis_label')
     color_palette = data.get('color_palette', 'RdBu')
 
-    results_df = session['differential_analysis_results']
-    data_df = session['df_history'][-1]
+    results_df = differential_analysis_results
+    history_paths = session.get('df_history_paths', [])
+    data_df = data_manager.load_dataframe(history_paths[-1])
 
     def format_value(val):
         if isinstance(val, (int, float)):
@@ -308,12 +302,14 @@ def clustergram_data():
 
     # Get feature-level metadata (rt, mz, intensity)
     feature_metadata_df = None
-    if session.get('df_meta_thd') is not None:
-        feature_metadata_df = session.get('df_meta_thd')
-    elif session.get('df_metadata') is not None:
-        feature_metadata_df = session.get('df_metadata')
+    feature_metadata_df = data_manager.load_dataframe('df_meta_thd_path')
+    if feature_metadata_df is None or feature_metadata_df.empty:
+        feature_metadata_df = data_manager.load_dataframe('df_metadata_path')
 
+    # Determine which p-value column to use
     p_value_col = 'p_adj' if 'p_adj' in results_df.columns else 'p_value'
+    
+    # Determine significant features
     if 'rejected' in results_df.columns:
         significant_features_df = results_df[results_df['rejected']]
     else:
@@ -346,7 +342,7 @@ def clustergram_data():
     y_labels = plot_data_reordered.index.tolist()
     if y_axis_label and feature_metadata_df is not None and y_axis_label in feature_metadata_df.columns:
         # Ensure metadata is aligned with the reordered data
-        aligned_metadata = feature_metadata_df.reindex(plot_data_reordered.index)
+        aligned_metadata = feature_metadata_df.reindex(plot_data_reordered.reordered.index)
         y_labels = aligned_metadata[y_axis_label].tolist()
 
     y_labels = [format_value(label) for label in y_labels]
@@ -433,7 +429,7 @@ def clustergram_data():
             'hoverinfo': 'none',
         })
 
-    return jsonify({
+    response_data = {
         'heatmap': heatmap_trace,
         'col_dendro': col_dendro_traces,
         'row_dendro': row_dendro_traces,
@@ -443,11 +439,30 @@ def clustergram_data():
         'heatmap_y': heatmap_y,
         'heatmap_customdata': full_custom_data,
         'metadata_column_names': metadata_column_names
-    })
+    }
+
+    # Clean up all dataframes
+    del differential_analysis_results
+    del results_df
+    del data_df
+    if feature_metadata_df is not None:
+        del feature_metadata_df
+    del significant_features_df
+    del plot_data
+    del numeric_plot_data
+    del plot_data_zscored
+    del plot_data_reordered
+    if 'aligned_metadata' in locals():
+        del aligned_metadata
+
+    return jsonify(response_data)
 
 @api_bp.route('/apply_regex_grouping', methods=['POST'])
 def apply_regex_grouping():
-    df_sample = session.get('df_sample')
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
+        return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
+    df_sample = data_manager.load_dataframe(history_paths[-1])
     if df_sample is None or df_sample.empty:
         return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
 

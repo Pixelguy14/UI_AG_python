@@ -1,5 +1,7 @@
 import os
-from flask import Flask, session
+import sys
+import uuid
+from flask import Flask, session, g
 from flask_session import Session # type: ignore
 from config import Config
 # Import and register blueprints
@@ -26,25 +28,29 @@ def create_app():
     # This decorator will apply to all requests for the app
     @app.before_request
     def before_request():
+        if 'session_id' not in session:
+            session['session_id'] = str(uuid.uuid4())
+
+        # Calculate session size
+        session_size = 0
+        g.session_items = {}
+        for key, value in session.items():
+            item_size = sys.getsizeof(value)
+            session_size += item_size
+            g.session_items[key] = f'{item_size / 1024:.2f} KB'
+        g.session_size_mb = session_size / (1024 * 1024)
+
         # Ensure session variables are initialized
-        if 'df_main' not in session:
-            session['df_main'] = None
-        if 'df_metadata' not in session:
-            session['df_metadata'] = None
-        if 'df_meta_thd' not in session:
-            session['df_meta_thd'] = None
-        if 'df_sample' not in session:
-            session['df_sample'] = None
-        if 'df_history' not in session:
-            session['df_history'] = []
+        if 'df_main_path' not in session:
+            session['df_main_path'] = None
+        if 'df_metadata_path' not in session:
+            session['df_metadata_path'] = None
+        if 'df_meta_thd_path' not in session:
+            session['df_meta_thd_path'] = None
+        if 'df_history_paths' not in session:
+            session['df_history_paths'] = []
         if 'imputed_mask' not in session:
             session['imputed_mask'] = None
-        if 'df_original' not in session:
-            session['df_original'] = None
-        if 'current_column' not in session:
-            session['current_column'] = ''
-        if 'orientation' not in session:
-            session['orientation'] = 'cols'
         if 'imputation_performed' not in session:
             session['imputation_performed'] = False
         if 'group_assignments' not in session:
@@ -57,8 +63,8 @@ def create_app():
             session['group_vector'] = {}
         if 'processing_steps' not in session:
             session['processing_steps'] = []
-        if 'differential_analysis_results' not in session:
-            session['differential_analysis_results'] = None
+        if 'differential_analysis_results_path' not in session:
+            session['differential_analysis_results_path'] = None
         if 'latest_differential_analysis_method' not in session:
             session['latest_differential_analysis_method'] = None
         if 'group_regexes' not in session:
