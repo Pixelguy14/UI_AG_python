@@ -63,6 +63,12 @@ def create_app():
             session['group_vector'] = {}
         if 'processing_steps' not in session:
             session['processing_steps'] = []
+        if 'step_transformation' not in session:
+            session['step_transformation'] = []
+        if 'step_scaling' not in session:
+            session['step_scaling'] = []
+        if 'step_normalization' not in session:
+            session['step_normalization'] = []
         if 'differential_analysis_results_path' not in session:
             session['differential_analysis_results_path'] = None
         if 'latest_differential_analysis_method' not in session:

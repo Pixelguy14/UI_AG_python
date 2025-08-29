@@ -74,7 +74,7 @@ def imputation():
     plots['intensity_comparison_plot'] = create_intensity_comparison_plot(
         original_df=df_before,
         imputed_df=df_sample,
-        log_transform=True
+        apply_log_transform=not (1 in session.get('step_transformation', []))
     )
     original_df = data_manager.load_dataframe(history_paths[0])
     return render_template('imputation.html',
@@ -115,6 +115,9 @@ def threshold():
     
     # Update processing steps
     session['processing_steps'].append({'icon': 'fa-filter', 'color': 'text-info', 'message': f'Applied thresholding: {threshold_percent}% non-null values. New shape: {df_thresholded.shape[0]} rows, {df_thresholded.shape[1]} columns.'})
+    session['step_transformation'].append(0)
+    session['step_scaling'].append(0)
+    session['step_normalization'].append(0)
     session.modified = True # Mark session as modified
 
     # Generate and return the updated heatmap data
@@ -132,7 +135,7 @@ def threshold():
     intensityComparisonPlot = create_intensity_comparison_plot(
         original_df=df_before,
         imputed_df=df_thresholded,
-        log_transform=True
+        apply_log_transform=not (1 in session.get('step_transformation', []))
     )
     original_df = data_manager.load_dataframe(history_paths[0])
     return jsonify({
@@ -196,6 +199,9 @@ def apply_imputation():
 
         # Update processing steps
         session['processing_steps'].append({'icon': 'fa-magic', 'color': 'text-primary', 'message': f'Applied {method} imputation.'})
+        session['step_transformation'].append(0)
+        session['step_scaling'].append(0)
+        session['step_normalization'].append(0)
         session.modified = True # Mark session as modified
         session['imputation_performed'] = True # Set flag that imputation has occurred
         
@@ -215,7 +221,7 @@ def apply_imputation():
         intensityComparisonPlot = create_intensity_comparison_plot(
             original_df=df_before,
             imputed_df=imputed_df,
-            log_transform=True
+            apply_log_transform=not (1 in session.get('step_transformation', []))
         )
 
         new_shape = imputed_df.shape
@@ -259,6 +265,9 @@ def replace_zeros():
         'color': 'text-warning',
         'message': 'Replaced all zero values with NaN.'
     })
+    session['step_transformation'].append(0)
+    session['step_scaling'].append(0)
+    session['step_normalization'].append(0)
     session.modified = True
 
     updated_heatmap = create_heatmap_BW(
@@ -275,7 +284,7 @@ def replace_zeros():
     intensityComparisonPlot = create_intensity_comparison_plot(
         original_df=df_before,
         imputed_df=df_cleaned,
-        log_transform=True
+        apply_log_transform=not (1 in session.get('step_transformation', []))
     )
 
     # Get shape before deleting
@@ -350,6 +359,9 @@ def apply_normalization():
             'color': 'text-success',
             'message': f'Applied {method.upper()} normalization.'
         })
+        session['step_transformation'].append(0)
+        session['step_scaling'].append(0)
+        session['step_normalization'].append(1)
         session.modified = True
 
         df_before = data_manager.load_dataframe(history_paths[-2])
@@ -431,6 +443,9 @@ def apply_transformation():
             'color': 'text-info',
             'message': f'Applied {method.replace("_", " ").title()} transformation.'
         })
+        session['step_transformation'].append(1)
+        session['step_scaling'].append(0)
+        session['step_normalization'].append(0)
         session.modified = True
         
         df_before = data_manager.load_dataframe(history_paths[-2])
@@ -512,6 +527,9 @@ def apply_scaling():
             'color': 'text-warning',
             'message': f'Applied {method.replace("_", " ").title()} scaling.'
         })
+        session['step_transformation'].append(0)
+        session['step_scaling'].append(1)
+        session['step_normalization'].append(0)
         session.modified = True
         
         df_before = data_manager.load_dataframe(history_paths[-2])
@@ -549,6 +567,12 @@ def reset_sample_step():
         data_manager.delete_dataframe(key_to_delete)
         if session.get('processing_steps'):
             session['processing_steps'].pop()
+        if session.get('step_transformation'):
+            session['step_transformation'].pop()
+        if session.get('step_scaling'):
+            session['step_scaling'].pop()
+        if session.get('step_normalization'):
+            session['step_normalization'].pop()
 
     session.modified = True
 
@@ -576,7 +600,7 @@ def reset_sample_step():
         response_data['intensity_comparison_plot'] = create_intensity_comparison_plot(
             original_df=df_before,
             imputed_df=df_current,
-            log_transform=True
+            apply_log_transform=not (1 in session.get('step_transformation', []))
         )
     elif context in ['normalization', 'transformation', 'scaling']:
         df_before=None

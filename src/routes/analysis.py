@@ -264,11 +264,18 @@ def differential_analysis():
     if differential_analysis_results is not None:
         del differential_analysis_results
 
+    any_log_transformed = 1 in session.get('step_transformation', [])
+    any_scaled = 1 in session.get('step_scaling', [])
+    any_normalized = 1 in session.get('step_normalization', [])
+
     return render_template('differential_analysis.html',
                            group_names=group_names,
                            group_vector=group_vector,
                            results_html=results_html,
-                           latest_differential_analysis_method=session.get('latest_differential_analysis_method'))
+                           latest_differential_analysis_method=session.get('latest_differential_analysis_method'),
+                           is_log_transformed=any_log_transformed,
+                           is_scaled=any_scaled,
+                           is_normalized=any_normalized)
 
 @analysis_bp.route('/result_visualization')
 def result_visualization():

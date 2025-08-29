@@ -26,7 +26,7 @@
     <!-- Controls and Info -->
     <div class="row">
         <div class="col-lg-7">
-            <div class="card animated-card h-100">
+            <div class="card animated-card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-calculator me-2"></i>Differential Analysis Controls</h5>
                 </div>
@@ -40,16 +40,16 @@
                                 <option value="paired_ttest">T-test (Paired)</option>
                             </optgroup>
                             <optgroup label="Two-Group Non-Parametric">
-                                <option value="wilcoxon">Wilcoxon Rank-Sum</option>
+                                <option value="mann_whitney">Mann-Whitney (Independent)</option>
+                                <option value="paired_wilcoxon">Wilcoxon Rank-Sum (Paired)</option>
                             </optgroup>
                             <optgroup label="Multi-Group Parametric">
-                                <option value="anova">ANOVA (with Tukey's HSD)</option>
+                                <option value="anova">ANOVA (with Tukey's HSD) (Independent)</option>
+                                <option value="anova_rm">ANOVA Repeated Measures (with Tukey's HSD) (Paired)</option>
                             </optgroup>
                             <optgroup label="Multi-Group Non-Parametric">
-                                <option value="kruskal_wallis">Kruskal-Wallis</option>
-                            </optgroup>
-                            <optgroup label="Advanced Models">
-                                <option value="linear_model">Linear Model (LM/GLM)</option>
+                                <option value="kruskal_wallis">Kruskal-Wallis (Independent)</option>
+                                <option value="friedman">Friedman (Paired)</option>
                             </optgroup>
                         </select>
                     </div>
@@ -69,18 +69,17 @@
                         </div>
                     </div>
 
+                    <!-- Group Order Selection -->
+                    <div id="groupOrderSelection" class="mb-3 p-3 border rounded bg-light" style="display: none;">
+                        <h6>Comparison Order</h6>
+                        <select id="comparisonOrderSelect" class="form-select"></select>
+                    </div>
+
                     <!-- Paired T-test Options -->
                     <div id="pairedOptions" class="mb-3 p-3 border rounded bg-light" style="display: none;">
                         <h6>Paired Sample Mapping</h6>
                         <p class="text-muted small">Select which sample in the first group is paired with a sample in the second group.</p>
                         <div id="pairedMapContainer"></div>
-                    </div>
-
-                    <!-- Linear Model Options -->
-                    <div id="lmOptions" class="mb-3 p-3 border rounded bg-light" style="display: none;">
-                        <h6>Linear Model Formula</h6>
-                        <input type="text" id="lmFormula" class="form-control" placeholder="e.g., value ~ group + batch">
-                        <small class="form-text text-muted">Use 'value' as the response and 'group' as the main predictor. Add covariates from metadata (e.g., + batch_effect).</small>
                     </div>
 
                     <!-- Correction Method -->
@@ -99,6 +98,16 @@
                     <div class="progress mt-3" id="analysisProgress" style="display: none;">
                         <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                     </div>
+                </div>
+            </div>
+            <!-- Normality Results Card -->
+            <div class="card animated-card mt-3" id="normalityResultsCard" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Normality Check (Saphiro)</h5>
+                </div>
+                <div class="card-body">
+                    <div id="normalityResultsContent"></div>
+                    <p class="mt-3 mb-0" id="normalityRecommendation"></p>
                 </div>
             </div>
         </div>
@@ -137,7 +146,7 @@
                     <div id="permanovaResults"></div>
                 </div>
             </div>
-            <div class="card animated-card mt-4">
+            <div class="card animated-card mt-4" id="dataStateCard" {% if not is_log_transformed and not is_scaled and not is_normalized %}style="display: none;"{% endif %}>
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-ruler-combined me-2"></i>Latest Differential Analysis Applied</h5>
                 </div>
@@ -163,12 +172,34 @@
                             <span class="badge bg-success">On</span>
                         {% else %}
                             <span class="badge bg-danger">Off</span>
+                        {% endif %}<br>
+                        Normalized: 
+                        {% if is_normalized %}
+                            <span class="badge bg-success">On</span>
+                        {% else %}
+                            <span class="badge bg-danger">Off</span>
                         {% endif %}
                     </p>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Normality Results Card -->
+    <div class="row mt-3">
+        <div class="col-12">
+            <div class="card animated-card" id="normalityResultsCard" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Normality Check</h5>
+                </div>
+                <div class="card-body">
+                    <div id="normalityResultsContent"></div>
+                    <p class="mt-3 mb-0" id="normalityRecommendation"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Results Table -->
     <div class="row mt-4">
         <div class="col-12">
@@ -235,20 +266,94 @@
             container.html(mappingHtml);
         }
 
+        function updateGroupOrderSelection() {
+            const selectedGroups = $('.group-checkbox:checked');
+            const numSelectedGroups = selectedGroups.length;
+            const testType = $('#testType').val();
+            const groupOrderSelectionDiv = $('#groupOrderSelection');
+            const comparisonOrderSelect = $('#comparisonOrderSelect');
+
+            const twoGroupTests = ['ttest', 'paired_ttest', 'wilcoxon', 'paired_wilcoxon', 'anova', 'kruskal_wallis'];
+
+            if (twoGroupTests.includes(testType) && numSelectedGroups === 2) {
+                groupOrderSelectionDiv.show();
+                comparisonOrderSelect.empty();
+
+                const groupNames = {{ group_names|tojson }};
+                const groups = selectedGroups.map((_, el) => $(el).val()).get();
+
+                const group1Id = groups[0];
+                const group2Id = groups[1];
+                const group1Name = groupNames[group1Id];
+                const group2Name = groupNames[group2Id];
+
+                // Option 1: Group 2 vs Group 1 (Comparison vs Reference)
+                comparisonOrderSelect.append(`<option value="${group1Id}_${group2Id}">${group2Name} vs ${group1Name}</option>`);
+                // Option 2: Group 1 vs Group 2 (Reference vs Comparison)
+                comparisonOrderSelect.append(`<option value="${group2Id}_${group1Id}">${group1Name} vs ${group2Name}</option>`);
+
+            } else {
+                groupOrderSelectionDiv.hide();
+            }
+        }
+
+        function checkNormality() {
+            const selectedGroups = $('.group-checkbox:checked').map((_, el) => $(el).val()).get();
+            const normalityCard = $('#normalityResultsCard');
+            const normalityContent = $('#normalityResultsContent');
+            const normalityRec = $('#normalityRecommendation');
+
+            if (selectedGroups.length < 1) {
+                normalityCard.hide();
+                return;
+            }
+
+            normalityContent.html('<p class="text-muted">Checking normality...</p>');
+            normalityRec.text('');
+            normalityCard.show();
+
+            $.ajax({
+                url: '{{ url_for("api.check_normality_route") }}',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ groups: selectedGroups }),
+                success: function(response) {
+                    if (response.error) {
+                        normalityContent.html(`<p class="text-danger">${response.error}</p>`);
+                    } else {
+                        let resultsHtml = '<ul class="list-unstyled mb-0">';
+                        for (const groupName in response.results) {
+                            resultsHtml += `<li><strong>${groupName}:</strong> p-value = ${response.results[groupName]}</li>`;
+                        }
+                        resultsHtml += '</ul>';
+                        normalityContent.html(resultsHtml);
+                        normalityRec.text(response.recommendation);
+                    }
+                },
+                error: function() {
+                    normalityContent.html('<p class="text-danger">Failed to check normality.</p>');
+                }
+            });
+        }
+
         function init() {
             $('#testType').on('change.da', function() {
                 const selectedTest = $(this).val();
                 $('#pairedOptions').toggle(selectedTest === 'paired_ttest');
-                $('#lmOptions').toggle(selectedTest === 'linear_model');
+                updateGroupOrderSelection(); // Call this on test type change
                 if (selectedTest === 'paired_ttest') {
                     updatePairedOptions();
                 }
             }).trigger('change');
 
             $('.group-checkbox').on('change.da', function() {
-                if ($('#testType').val() === 'paired_ttest') {
+                const selectedTest = $('#testType').val();
+                const isPaired = ['paired_ttest', 'paired_wilcoxon'].includes(selectedTest);
+                if (isPaired) {
                     updatePairedOptions();
                 }
+                updateGroupOrderSelection(); // Call this on group selection change
+                checkNormality(); // Automatically check normality
             });
 
             $('#runAnalysisBtn').on('click.da', function() {
@@ -261,6 +366,14 @@
                     correction_method: $('#correctionMethod').val()
                 };
 
+                // Add group order to payload if visible
+                if ($('#groupOrderSelection').is(':visible')) {
+                    const selectedOrder = $('#comparisonOrderSelect').val();
+                    const parts = selectedOrder.split('_');
+                    payload.reference_group_id = parts[0];
+                    payload.comparison_group_id = parts[1];
+                }
+
                 if (payload.test_type === 'paired_ttest') {
                     payload.paired_map = [];
                     $('.paired-selector').each(function() {
@@ -272,14 +385,6 @@
                     });
                     if (payload.paired_map.length === 0) {
                         window.showToast('Please map the paired samples before running the analysis.', 'warning');
-                        return;
-                    }
-                }
-
-                if (payload.test_type === 'linear_model') {
-                    payload.formula = $('#lmFormula').val();
-                    if (!payload.formula) {
-                        window.showToast('Please provide a formula for the linear model.', 'warning');
                         return;
                     }
                 }
@@ -300,12 +405,31 @@
                         } else {
                             window.showToast('Analysis completed successfully!', 'success');
                             $('#resultsContainer').html(response.html);
+
+                            // Display normality results
+                            const normalityCard = $('#normalityResultsCard');
+                            const normalityContent = $('#normalityResultsContent');
+                            const normalityRec = $('#normalityRecommendation');
+
+                            if (response.normality_results && Object.keys(response.normality_results).length > 0) {
+                                let resultsHtml = '<ul class="list-unstyled mb-0">';
+                                for (const groupName in response.normality_results) {
+                                    resultsHtml += `<li><strong>${groupName}:</strong> p-value = ${response.normality_results[groupName]}</li>`;
+                                }
+                                resultsHtml += '</ul>';
+                                normalityContent.html(resultsHtml);
+                                normalityRec.text(response.normality_recommendation);
+                                normalityCard.show();
+                            } else {
+                                normalityCard.hide();
+                            }
                         }
                     },
                     error: function(xhr) {
                         const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
                         window.showToast(errorMsg, 'danger');
                         $('#resultsContainer').html('<p class="text-danger">An error occurred.</p>');
+                        $('#normalityResultsCard').hide(); // Hide normality card on error
                     },
                     complete: function() {
                         progress.hide();

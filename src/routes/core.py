@@ -48,6 +48,22 @@ def upload_file():
             filepath = os.path.join(session_folder, filename)
             file.save(filepath)
             
+            # Initialize step arrays based on user input
+            is_log_transformed_input = 'is_log_transformed' in request.form
+            is_scaled_input = 'is_scaled' in request.form
+
+            session['step_transformation'] = [1] if is_log_transformed_input else [0]
+            session['step_scaling'] = [1] if is_scaled_input else [0]
+            session['step_normalization'] = [0] # Always 0 for initial upload
+
+            # Add initial processing step message
+            initial_message = "Initial data upload."
+            if is_log_transformed_input:
+                initial_message += " (Pre-transformed)"
+            if is_scaled_input:
+                initial_message += " (Pre-scaled)"
+            session['processing_steps'] = [{'icon': 'fa-upload', 'color': 'text-info', 'message': initial_message}]
+
             try:
                 # Load the file
                 df = loadFile(filepath)
@@ -98,7 +114,9 @@ def upload_file():
                 flash(f'An error occurred while processing the file: {str(e)}', 'danger')
                 return redirect(request.url)
     
-    return render_template('upload.html', df_preview_html=None, shape=None)
+    return render_template('upload.html', df_preview_html=None, shape=None,
+                           any_log_transformed=any(session.get('step_transformation', [])),
+                           any_scaled=any(session.get('step_scaling', [])))
 
 @core_bp.route('/summary')
 def summary():

@@ -302,7 +302,20 @@ def preprocessing_summary_perVariable(df):
         summary.loc[summary['variable'] == col, 'median'] = df[col].median()
         summary.loc[summary['variable'] == col, 'skew'] = df[col].skew()
         summary.loc[summary['variable'] == col, 'kurtosis'] = df[col].kurtosis()
-        summary.loc[summary['variable'] == col, 'variance'] = df[col].var() # Added Variance
+        summary.loc[summary['variable'] == col, 'variance'] = df[col].var()
+
+        # Normality Assessment based on Skewness and Kurtosis
+        skew_val = df[col].skew()
+        kurt_val = df[col].kurtosis() # Excess kurtosis
+
+        if -0.5 <= skew_val <= 0.5 and -0.5 <= kurt_val <= 0.5:
+            summary.loc[summary['variable'] == col, 'normality_assessment'] = 'Likely Normal'
+        elif not (-0.5 <= skew_val <= 0.5):
+            summary.loc[summary['variable'] == col, 'normality_assessment'] = 'Skewed'
+        elif not (-0.5 <= kurt_val <= 0.5):
+            summary.loc[summary['variable'] == col, 'normality_assessment'] = 'Heavy/Light-tailed'
+        else:
+            summary.loc[summary['variable'] == col, 'normality_assessment'] = 'Non-normal'
 
         # Percentiles
         percentiles = df[col].quantile([0.01, 0.05, 0.25, 0.75, 0.95, 0.99])

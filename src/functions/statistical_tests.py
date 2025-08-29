@@ -6,7 +6,7 @@ perform a specific statistical test, and return the results as a DataFrame.
 
 import pandas as pd
 import numpy as np
-from scipy.stats import ttest_ind, ttest_rel, mannwhitneyu, f_oneway, kruskal # type: ignore
+from scipy.stats import ttest_ind, ttest_rel, mannwhitneyu, wilcoxon, f_oneway, kruskal, shapiro, friedmanchisquare # type: ignore
 from statsmodels.stats.multitest import multipletests # type: ignore
 from statsmodels.stats.multicomp import pairwise_tukeyhsd # type: ignore
 import statsmodels.formula.api as smf # type: ignore
@@ -19,7 +19,8 @@ def run_t_test(
     group1_cols: List[str], 
     group2_cols: List[str], 
     paired: bool = False, 
-    paired_map: Optional[List[Tuple[str, str]]] = None
+    paired_map: Optional[List[Tuple[str, str]]] = None,
+    is_log_transformed: bool = False
 ) -> pd.DataFrame:
     # Validate paired_map if needed
     if paired:
@@ -39,8 +40,12 @@ def run_t_test(
     # Log2FC with consistent samples & NaN skipping
     mean_group1 = group1_data.mean(axis=1, skipna=True) # type: ignore
     mean_group2 = group2_data.mean(axis=1, skipna=True) # type: ignore
-    epsilon = 1
-    log2fc = np.log2(mean_group2 + epsilon) - np.log2(mean_group1 + epsilon)
+    
+    if is_log_transformed:
+        log2fc = mean_group2 - mean_group1
+    else:
+        epsilon = 1
+        log2fc = np.log2(mean_group2 + epsilon) - np.log2(mean_group1 + epsilon)
 
     # T-test (handles NaNs internally)
     stat, p_val = test_func(group1_data, group2_data, axis=1, nan_policy='omit')
@@ -57,10 +62,11 @@ def run_t_test(
 
     return pd.DataFrame({'p_value': p_val, 'log2FC': log2fc}, index=data.index)
 
-def run_wilcoxon_rank_sum(
+def run_mann_whitney_u(
     data: pd.DataFrame, 
     group1_cols: List[str], 
-    group2_cols: List[str]
+    group2_cols: List[str],
+    is_log_transformed: bool = False
 ) -> pd.DataFrame:
     # Vectorized NaN handling
     group1_mask = data[group1_cols].notna()
@@ -69,8 +75,12 @@ def run_wilcoxon_rank_sum(
     # Precompute medians for log2FC
     median_group1 = data[group1_cols].median(axis=1, skipna=True) # type: ignore
     median_group2 = data[group2_cols].median(axis=1, skipna=True) # type: ignore
-    epsilon = 1
-    log2fc = np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon)
+    
+    if is_log_transformed:
+        log2fc = median_group2 - median_group1
+    else:
+        epsilon = 1
+        log2fc = np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon)
 
     # Vectorized p-value calculation
     p_values = []
@@ -223,7 +233,7 @@ def format_anova_results_html(
     formatted_df = pd.DataFrame(formatted_results, index=data.index)
     return anova_results.join(formatted_df)
 
-def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> pd.DataFrame:
+def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]], is_log_transformed: bool = False) -> pd.DataFrame:
     """
     Performs the Kruskal-Wallis H-test row by row using .apply().
     """
@@ -255,7 +265,10 @@ def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> p
             if pd.isna(median_group1) or pd.isna(median_group2):
                 log2fc_values.append(np.nan)
             else:
-                log2fc_values.append(np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon))
+                if is_log_transformed:
+                    log2fc_values.append(median_group2 - median_group1)
+                else:
+                    log2fc_values.append(np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon))
         elif len(groups_data) > 2: # If more than two groups, calculate FC relative to overall median
             all_vals = np.concatenate([g.to_numpy(dtype=float) for g in groups_data if len(g) > 0])
             if len(all_vals) == 0:
@@ -267,35 +280,52 @@ def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> p
                 if pd.isna(median_first_group) or overall_median == 0:
                     log2fc_values.append(np.nan)
                 else:
-                    log2fc_values.append(np.log2(median_first_group + epsilon) - np.log2(overall_median + epsilon))
+                    if is_log_transformed:
+                        log2fc_values.append(median_first_group - overall_median)
+                    else:
+                        log2fc_values.append(np.log2(median_first_group + epsilon) - np.log2(overall_median + epsilon))
         else:
             log2fc_values.append(np.nan)
 
     return pd.DataFrame({'p_value': p_values, 'log2FC': log2fc_values}, index=data.index)
 
-def run_linear_model(data: pd.DataFrame, formula: str, metadata: pd.DataFrame) -> pd.DataFrame:
+def run_friedman_test(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> pd.DataFrame:
     """
-    Fits a linear model for each feature using .apply().
+    Performs the Friedman test row by row.
+    Assumes data is already aligned for paired samples.
     """
-    if 'value' in metadata.columns:
-        raise ValueError("'value' is a reserved column name for this function. Please rename it in your metadata.")
+    p_values = []
+    for index, row in data.iterrows():
+        groups_data = [row[cols].dropna() for cols in group_map.values()]
 
-    def _lm_row(row: pd.Series) -> Tuple[Optional[float], str]:
-        # Combine metadata with the single feature's data
-        model_df = metadata.copy()
-        model_df['value'] = row.values
-        
+        # Friedman test requires at least 3 groups and each group must have at least 1 observation
+        if len(groups_data) < 3 or any(len(g) == 0 for g in groups_data):
+            p_values.append(np.nan)
+            continue
+
+        # Ensure all groups have the same number of observations for Friedman test
+        # This implies that the data is already "paired" or "repeated measures"
+        num_observations = len(groups_data[0])
+        if not all(len(g) == num_observations for g in groups_data):
+            # This scenario should ideally be handled before calling this function
+            # or by ensuring the input data structure is strictly paired.
+            # For now, we'll return NaN or raise an error.
+            p_values.append(np.nan)
+            continue
+
         try:
-            model = smf.ols(formula, data=model_df).fit()
-            # Try to get p-value for 'group', a common predictor, but handle its absence
-            p_val = model.pvalues.get('group', np.nan)
-            return p_val, str(model.summary())
+            _, p_val = friedmanchisquare(*groups_data)
+            p_values.append(p_val)
+        except ValueError:
+            p_values.append(np.nan)
         except Exception as e:
-            return np.nan, str(e)
+            p_values.append(np.nan)
+            # Log the error for debugging
+            import logging
+            logging.error(f"Error during Friedman test for row {index}: {e}")
 
-    results = data.apply(_lm_row, axis=1, result_type='expand')
-    results.columns = ['p_value', 'model_summary']
-    return results
+    return pd.DataFrame({'p_value': p_values}, index=data.index)
+
 
 def run_permanova(
     data: pd.DataFrame, 
@@ -377,3 +407,71 @@ def apply_multiple_test_correction(
     p_adj_series = pd.Series(p_adj, index=finite_p_values.index)
     rejected_series = pd.Series(rejected, index=finite_p_values.index).reindex(p_values.index, fill_value=False) # Fill NaNs with False
     return p_adj_series.reindex(p_values.index), rejected_series
+
+def check_normality(data: pd.Series) -> float:
+    """
+    Performs Shapiro-Wilk test for normality.
+    Returns the p-value of the test.
+    """
+    # Drop NaNs and ensure at least 3 data points for Shapiro-Wilk
+    clean_data = data.dropna()
+    if len(clean_data) < 3:
+        return np.nan # Not enough data to perform test
+    
+    try:
+        stat, p_value = shapiro(clean_data)
+        return p_value
+    except Exception as e:
+        # Handle cases where shapiro test might fail (e.g., all values identical)
+        return np.nan
+
+def run_wilcoxon_paired(
+    data: pd.DataFrame, 
+    paired_map: List[Tuple[str, str]],
+    is_log_transformed: bool = False
+) -> pd.DataFrame:
+    if not paired_map:
+        raise ValueError("Paired Wilcoxon test requires a non-empty 'paired_map'.")
+    
+    group1_cols_aligned = [item[0] for item in paired_map]
+    group2_cols_aligned = [item[1] for item in paired_map]
+
+    group1_data = data[group1_cols_aligned]
+    group2_data = data[group2_cols_aligned]
+
+    # Log2FC
+    median_group1 = group1_data.median(axis=1, skipna=True)
+    median_group2 = group2_data.median(axis=1, skipna=True)
+    
+    if is_log_transformed:
+        log2fc = median_group2 - median_group1
+    else:
+        epsilon = 1
+        log2fc = np.log2(median_group2 + epsilon) - np.log2(median_group1 + epsilon)
+
+    # Wilcoxon test
+    p_values = []
+    for i in range(len(data)):
+        row_g1 = group1_data.iloc[i].values
+        row_g2 = group2_data.iloc[i].values
+        
+        # Create pairs and remove pairs with NaN
+        pairs = [(x, y) for x, y in zip(row_g1, row_g2) if not np.isnan(x) and not np.isnan(y)]
+        if len(pairs) < 1:
+            p_values.append(np.nan)
+            continue
+        
+        g1_paired = np.array([p[0] for p in pairs])
+        g2_paired = np.array([p[1] for p in pairs])
+
+        if np.all(g1_paired == g2_paired):
+            p_values.append(1.0)
+            continue
+
+        try:
+            _, p_val = wilcoxon(g1_paired, g2_paired)
+            p_values.append(p_val)
+        except ValueError:
+            p_values.append(1.0)
+
+    return pd.DataFrame({'p_value': p_values, 'log2FC': log2fc}, index=data.index)

@@ -949,7 +949,7 @@ def create_volcano_plot(
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 
-def create_intensity_comparison_plot(original_df, imputed_df, log_transform=False):
+def create_intensity_comparison_plot(original_df, imputed_df, apply_log_transform=False):
     """
     Compares intensity distributions of original vs. imputed data using Plotly.
 
@@ -973,7 +973,7 @@ def create_intensity_comparison_plot(original_df, imputed_df, log_transform=Fals
     original_flat = original_flat[~np.isnan(original_flat)]
     imputed_flat = imputed_df.values.flatten()
 
-    if log_transform:
+    if apply_log_transform:
         original_flat = np.log1p(original_flat)
         imputed_flat = np.log1p(imputed_flat)
         xlabel = 'log(Intensity)'

@@ -10,9 +10,9 @@ from ..functions.plot_definitions import ( # type: ignore
     create_pie_chart, create_density_plot, create_boxplot, create_violinplot,
     create_pca_plot, create_hca_plot, create_plsda_plot, create_oplsda_plot
 )
-from ..functions.statistical_tests import ( # type: ignore
-    run_t_test, run_wilcoxon_rank_sum, run_anova, run_kruskal_wallis,
-    run_linear_model, run_permanova, apply_multiple_test_correction, format_anova_results_html
+from ..functions.statistical_tests import (
+    run_t_test, run_mann_whitney_u, run_anova, run_kruskal_wallis,
+    run_friedman_test, run_permanova, apply_multiple_test_correction, format_anova_results_html, check_normality
 )
 from .. import data_manager
 
@@ -123,6 +123,8 @@ def get_pca_plot(history_index):
     if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
     df = data_manager.load_dataframe(history_paths[history_index])
+    if df is None:
+        return jsonify({'error': 'Dataframe not found for this history step.'})
     plot = create_pca_plot(df, 'PCA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
     return jsonify({'plot': plot})
 
@@ -148,6 +150,8 @@ def get_plsda_plot(history_index):
     if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
     df = data_manager.load_dataframe(history_paths[history_index])
+    if df is None:
+        return jsonify({'error': 'Dataframe not found for this history step.'})
     plot = create_plsda_plot(df, 'PLS-DA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
     return jsonify({'plot': plot})
 
@@ -157,6 +161,8 @@ def get_oplsda_plot(history_index):
     if not history_paths or history_index >= len(history_paths):
         return jsonify({'error': 'Invalid history index'})
     df = data_manager.load_dataframe(history_paths[history_index])
+    if df is None:
+        return jsonify({'error': 'Dataframe not found for this history step.'})
     plot = create_oplsda_plot(df, 'OPLS-DA Plot', group_vector=session.get('group_vector'),group_names=session.get('group_names'))
     return jsonify({'plot': plot})
 
@@ -181,38 +187,119 @@ def run_differential_analysis():
         return jsonify({'error': 'No sample data available'})
 
     data = request.json
-    test_type = data.get('test_type')
+    test_type_full = data.get('test_type')
+    test_type_parts = test_type_full.split('_')
+    test_type = test_type_parts[0] # e.g., 'ttest', 'wilcoxon', 'anova', 'kruskal_wallis'
+    is_paired_test = 'paired' in test_type_parts # True for paired tests
+    is_independent_test = 'independent' in test_type_parts # True for independent tests
+
     groups = data.get('groups')
     correction_method = data.get('correction_method')
     paired_map = data.get('paired_map')
-    formula = data.get('formula')
 
     df = data_manager.load_dataframe(history_paths[-1])
     df.columns = df.columns.map(str) # Ensure df columns are strings
     group_vector = session['group_vector']
     results_df = pd.DataFrame()
 
+    is_log_transformed = 1 in session.get('step_transformation', [])
+
+    reference_group_id = data.get('reference_group_id')
+    comparison_group_id = data.get('comparison_group_id')
+
+    normality_results = {}
+    normality_recommendation = ""
+
     try:
-        if test_type in ['ttest', 'paired_ttest']:
+        # --- Normality Check (for parametric tests) ---
+        parametric_tests = ['ttest', 'anova']
+        if test_type in parametric_tests:
+            # Determine which groups to check for normality
+            groups_to_check = []
+            if len(groups) == 2: # Two-group tests
+                group1_id = int(reference_group_id)
+                group2_id = int(comparison_group_id)
+                group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
+                group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                groups_to_check.append((group1_id, group1_cols))
+                groups_to_check.append((group2_id, group2_cols))
+            else: # Multi-group tests (ANOVA)
+                for gid in groups:
+                    group_cols = [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])]
+                    groups_to_check.append((int(gid), group_cols))
+            
+            all_normal = True
+            for gid, g_cols in groups_to_check:
+                group_data = df[g_cols].values.flatten()
+                group_data = group_data[~np.isnan(group_data)]
+                if len(group_data) > 2: # Shapiro-Wilk requires at least 3 samples
+                    p_val_normality = check_normality(pd.Series(group_data))
+                    normality_results[session['group_names'][str(gid)]] = f'{p_val_normality:.3f}'
+                    if p_val_normality < 0.05: # Assuming alpha = 0.05 for normality test
+                        all_normal = False
+                else:
+                    normality_results[session['group_names'][str(gid)]] = 'N/A (too few samples)'
+                    all_normal = False # Cannot confirm normality with too few samples
+            
+            if all_normal:
+                normality_recommendation = "Data appears normally distributed. Parametric test is suitable."
+            else:
+                normality_recommendation = "Data may not be normally distributed. Consider a non-parametric test."
+
+        # --- Run Statistical Test ---
+        if test_type == 'ttest':
             if len(groups) != 2:
-                return jsonify({'error': 'T-test requires exactly two groups.'})
-            group1_id, group2_id = int(groups[0]), int(groups[1])
+                return jsonify({'error': f'{test_type.replace("_", " ").title()} requires exactly two groups.'})
+            
+            if not reference_group_id or not comparison_group_id:
+                return jsonify({'error': 'Please select both reference and comparison groups.'})
+
+            group1_id = int(reference_group_id)
+            group2_id = int(comparison_group_id)
+
             group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
             group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-            results_df = run_t_test(df, group1_cols, group2_cols, paired=(test_type == 'paired_ttest'), paired_map=paired_map)
+
+            results_df = run_t_test(df, group1_cols, group2_cols, paired=is_paired_test, is_log_transformed=is_log_transformed)
 
         elif test_type == 'wilcoxon':
             if len(groups) != 2:
-                return jsonify({'error': 'Wilcoxon test requires exactly two groups.'})
-            group1_id, group2_id = int(groups[0]), int(groups[1])
+                return jsonify({'error': f'{test_type.replace("_", " ").title()} requires exactly two groups.'})
+            
+            if not reference_group_id or not comparison_group_id:
+                return jsonify({'error': 'Please select both reference and comparison groups.'})
+
+            group1_id = int(reference_group_id)
+            group2_id = int(comparison_group_id)
+
             group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
             group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-            results_df = run_wilcoxon_rank_sum(df, group1_cols, group2_cols)
+
+            results_df = run_mann_whitney_u(df, group1_cols, group2_cols, is_log_transformed=is_log_transformed)
+
+        elif test_type == 'paired_wilcoxon':
+            if len(groups) != 2:
+                return jsonify({'error': 'Paired Wilcoxon test requires exactly two groups.'}), 400
+            paired_map = data.get('paired_map')
+            if not paired_map:
+                return jsonify({'error': 'Paired Wilcoxon test requires a paired map.'}), 400
+            results_df = run_wilcoxon_paired(df, paired_map, is_log_transformed=is_log_transformed)
 
         elif test_type == 'anova':
             if len(groups) < 2:
                 return jsonify({'error': 'ANOVA requires at least two groups.'})
-            group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+            
+            if len(groups) == 2: # If only two groups selected, apply order
+                if not reference_group_id or not comparison_group_id:
+                    return jsonify({'error': 'Please select both reference and comparison groups for two-group ANOVA.'})
+                group1_id = int(reference_group_id)
+                group2_id = int(comparison_group_id)
+                group_map = {
+                    session['group_names'][str(group1_id)]: [col for col, info in group_vector.items() if group1_id in info.get('groups', [])],
+                    session['group_names'][str(group2_id)]: [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                }
+            else:
+                group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
             
             # Run ANOVA to get stats
             anova_results = run_anova(df, group_map)
@@ -222,17 +309,30 @@ def run_differential_analysis():
         elif test_type == 'kruskal_wallis':
             if len(groups) < 2:
                 return jsonify({'error': 'Kruskal-Wallis requires at least two groups.'})
-            group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
-            results_df = run_kruskal_wallis(df, group_map)
+            
+            if len(groups) == 2: # If only two groups selected, apply order
+                if not reference_group_id or not comparison_group_id:
+                    return jsonify({'error': 'Please select both reference and comparison groups for two-group Kruskal-Wallis.'})
+                group1_id = int(reference_group_id)
+                group2_id = int(comparison_group_id)
+                group_map = {
+                    session['group_names'][str(group1_id)]: [col for col, info in group_vector.items() if group1_id in info.get('groups', [])],
+                    session['group_names'][str(group2_id)]: [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                }
+            else:
+                group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+            
+            results_df = run_kruskal_wallis(df, group_map, is_log_transformed=is_log_transformed)
 
-        elif test_type == 'linear_model':
-            if not formula:
-                return jsonify({'error': 'Linear model requires a formula.'})
-            # Note: The run_linear_model function expects the metadata dataframe
-            metadata_df = data_manager.load_dataframe('df_metadata_path')
-            if metadata_df is None:
-                 return jsonify({'error': 'Linear models require metadata with covariates.'})
-            results_df = run_linear_model(df, formula, metadata_df)
+        elif test_type == 'friedman': # NEW BLOCK FOR FRIEDMAN TEST
+            if len(groups) < 2: # Friedman test requires at least 2 groups, but typically 3+ for multi-group
+                return jsonify({'error': 'Friedman test requires at least two groups.'})
+            
+            # For Friedman, we assume paired data, so group_map needs to be constructed carefully
+            # It's a multi-group test, so we'll use the general group_map construction
+            group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+            
+            results_df = run_friedman_test(df, group_map) # Call the new Friedman test function
 
         else:
             return jsonify({'error': 'Invalid test type'})
@@ -244,8 +344,8 @@ def run_differential_analysis():
             results_df['rejected'] = rejected
 
         data_manager.save_dataframe(results_df, 'differential_analysis_results_path', 'differential_analysis_results')
-        session['latest_differential_analysis_method'] = test_type.replace("_", " ").title()
-        return jsonify({'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False)})
+        session['latest_differential_analysis_method'] = test_type_full.replace("_", " ").title()
+        return jsonify({'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False), 'normality_results': normality_results, 'normality_recommendation': normality_recommendation})
 
     except Exception as e:
         return jsonify({'error': f'An error occurred during analysis: {str(e)}'})
@@ -293,6 +393,8 @@ def clustergram_data():
     history_paths = session.get('df_history_paths', [])
     data_df = data_manager.load_dataframe(history_paths[-1])
 
+    is_scaled = 1 in session.get('step_scaling', [])
+
     def format_value(val):
         if isinstance(val, (int, float)):
             if abs(val) > 10000 or (abs(val) < 0.0001 and val != 0):
@@ -322,7 +424,11 @@ def clustergram_data():
     plot_data = data_df.loc[significant_features]
     numeric_plot_data = plot_data.select_dtypes(include=[np.number])
     
-    plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=1).fillna(0)
+    if not is_scaled:
+        plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=1).fillna(0)
+    else:
+        plot_data_zscored = numeric_plot_data.fillna(0)
+
     # plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=0).fillna(0)
 
     # row_linkage is for features (rows)
@@ -511,3 +617,55 @@ def apply_regex_grouping():
         'groupAssignments': group_assignments,
         'groupVector': group_vector
     })
+
+@api_bp.route('/check_normality', methods=['POST'])
+def check_normality_route():
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
+        return jsonify({'error': 'No sample data available'})
+
+    data = request.json
+    groups = data.get('groups')
+    if not groups or len(groups) < 1:
+        return jsonify({'error': 'Please select at least one group to check for normality.'}), 400
+
+    df = data_manager.load_dataframe(history_paths[-1])
+    group_vector = session['group_vector']
+    group_names = session.get('group_names', {})
+
+    normality_results = {}
+    all_normal = True
+
+    try:
+        for group_id in groups:
+            gid = int(group_id)
+            group_cols = [col for col, info in group_vector.items() if gid in info.get('groups', [])]
+            if not group_cols:
+                continue
+
+            group_data = df[group_cols].values.flatten()
+            group_data = group_data[~np.isnan(group_data)]
+            
+            group_name = group_names.get(str(gid), f'Group {gid}')
+
+            if len(group_data) > 2:
+                p_val_normality = check_normality(pd.Series(group_data))
+                normality_results[group_name] = f'{p_val_normality:.3g}'
+                if p_val_normality < 0.05:
+                    all_normal = False
+            else:
+                normality_results[group_name] = 'N/A (too few samples)'
+                all_normal = False
+        
+        if not normality_results:
+            return jsonify({'recommendation': 'Please select groups with data to check normality.', 'results': {}})
+
+        if all_normal:
+            recommendation = "Data appears normally distributed. Parametric tests are suitable."
+        else:
+            recommendation = "Data may not be normally distributed. Consider a non-parametric test."
+
+        return jsonify({'recommendation': recommendation, 'results': normality_results})
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred during normality check: {str(e)}'}), 500
