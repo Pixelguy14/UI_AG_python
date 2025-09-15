@@ -44,13 +44,23 @@
                                 <option value="paired_wilcoxon">Wilcoxon Rank-Sum (Paired)</option>
                             </optgroup>
                             <optgroup label="Multi-Group Parametric">
-                                <option value="anova">ANOVA (with Tukey's HSD) (Independent)</option>
-                                <option value="anova_rm">ANOVA Repeated Measures (with Tukey's HSD) (Paired)</option>
+                                <option value="anova">ANOVA (Independent)</option>
+                                <option value="anova_rm">ANOVA Repeated Measures (Paired)</option>
                             </optgroup>
                             <optgroup label="Multi-Group Non-Parametric">
                                 <option value="kruskal_wallis">Kruskal-Wallis (Independent)</option>
                                 <option value="friedman">Friedman (Paired)</option>
                             </optgroup>
+                        </select>
+                    </div>
+
+                    <!-- ANOVA Post-hoc Selection -->
+                    <div id="anovaPosthocOptions" class="mb-3" style="display: none;">
+                        <label for="anovaPosthoc" class="form-label"><b>ANOVA Post-hoc Method:</b></label>
+                        <select class="form-select" id="anovaPosthoc">
+                            <option value="tukeyhsd">Tukey's HSD</option>
+                            <option value="bonferroni">Bonferroni</option>
+                            <option value="holm">Holm-Sidak</option>
                         </select>
                     </div>
 
@@ -75,11 +85,11 @@
                         <select id="comparisonOrderSelect" class="form-select"></select>
                     </div>
 
-                    <!-- Paired T-test Options -->
-                    <div id="pairedOptions" class="mb-3 p-3 border rounded bg-light" style="display: none;">
-                        <h6>Paired Sample Mapping</h6>
-                        <p class="text-muted small">Select which sample in the first group is paired with a sample in the second group.</p>
-                        <div id="pairedMapContainer"></div>
+                    <!-- Paired Samples Button -->
+                    <div id="pairedSamplesContainer" class="mb-3" style="display: none;">
+                        <button type="button" id="definePairsBtn" class="btn btn-outline-secondary w-100">
+                            <i class="fas fa-user-friends me-2"></i>Define Paired Samples
+                        </button>
                     </div>
 
                     <!-- Correction Method -->
@@ -103,7 +113,7 @@
             <!-- Normality Results Card -->
             <div class="card animated-card mt-3" id="normalityResultsCard" style="display: none;">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Normality Check (Saphiro)</h5>
+                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Normality Check</h5>
                 </div>
                 <div class="card-body">
                     <div id="normalityResultsContent"></div>
@@ -185,20 +195,7 @@
         </div>
     </div>
 
-    <!-- Normality Results Card -->
-    <div class="row mt-3">
-        <div class="col-12">
-            <div class="card animated-card" id="normalityResultsCard" style="display: none;">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Normality Check</h5>
-                </div>
-                <div class="card-body">
-                    <div id="normalityResultsContent"></div>
-                    <p class="mt-3 mb-0" id="normalityRecommendation"></p>
-                </div>
-            </div>
-        </div>
-    </div>
+    
 
     <!-- Results Table -->
     <div class="row mt-4">
@@ -211,9 +208,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='csv', context='differential_analysis_results') }}">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='tsv', context='differential_analysis_results') }}">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('core.export_dataframe', format='excel', context='differential_analysis_results') }}">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='csv', context='differential_analysis_results') }}', 'differential_analysis_results.csv')">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='tsv', context='differential_analysis_results') }}', 'differential_analysis_results.tsv')">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='excel', context='differential_analysis_results') }}', 'differential_analysis_results.xlsx')">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -230,130 +227,255 @@
         </div>
     </div>
 </div>
+
+<!-- Pairing Modal -->
+<div class="modal fade" id="pairingModal" tabindex="-1" aria-labelledby="pairingModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pairingModalLabel">Define Paired Samples</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="pairingModalBody">
+        <!-- Content will be dynamically inserted here -->
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
     (function() {
-        function updatePairedOptions() {
-            const groups = $('.group-checkbox:checked').map((_, el) => $(el).val()).get();
-            const container = $('#pairedMapContainer');
-            container.empty();
+        let pairedData = {{ paired_data|tojson }}; // Load from session
 
-            if (groups.length !== 2) {
-                container.html('<p class="text-danger">Please select exactly two groups for pairing.</p>');
-                return;
-            }
-
-            const groupVector = {{ group_vector|tojson }};
-            const groupNames = {{ group_names|tojson }};
-            const group1Samples = Object.keys(groupVector).filter(s => groupVector[s].groups.includes(parseInt(groups[0])));
-            const group2Samples = Object.keys(groupVector).filter(s => groupVector[s].groups.includes(parseInt(groups[1])));
-
-            let mappingHtml = '<div class="row">';
-            mappingHtml += `<div class="col-6"><h6>${groupNames[groups[0]]}</h6>`;
-            group1Samples.forEach(s1 => {
-                mappingHtml += `<div class="mb-2 d-flex align-items-center"><label class="me-2">${s1}</label><select class="form-select form-select-sm paired-selector" data-sample1="${s1}">`;
-                mappingHtml += '<option value="">Select Pair</option>';
-                group2Samples.forEach(s2 => {
-                    mappingHtml += `<option value="${s2}">${s2}</option>`;
+        function downloadFile(url, filename) {
+            fetch(url)
+                .then(response => response.blob())
+                .then(blob => {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                })
+                .catch(e => {
+                    window.showToast('Download failed.', 'danger');
                 });
-                mappingHtml += '</select></div>';
-            });
-            mappingHtml += '</div>';
-            mappingHtml += `<div class="col-6"><h6>${groupNames[groups[1]]}</h6></div>`;
-            mappingHtml += '</div>';
-            container.html(mappingHtml);
         }
+        window.downloadFile = downloadFile;
 
         function updateGroupOrderSelection() {
+            const selectedTest = $('#testType').val();
+            const twoGroupTests = ['ttest', 'paired_ttest', 'mann_whitney', 'paired_wilcoxon'];
+            const isTwoGroupTest = twoGroupTests.includes(selectedTest);
             const selectedGroups = $('.group-checkbox:checked');
-            const numSelectedGroups = selectedGroups.length;
-            const testType = $('#testType').val();
-            const groupOrderSelectionDiv = $('#groupOrderSelection');
+            const groupOrderContainer = $('#groupOrderSelection');
             const comparisonOrderSelect = $('#comparisonOrderSelect');
 
-            const twoGroupTests = ['ttest', 'paired_ttest', 'wilcoxon', 'paired_wilcoxon', 'anova', 'kruskal_wallis'];
+            if (isTwoGroupTest && selectedGroups.length === 2) {
+                const group1 = {
+                    id: $(selectedGroups[0]).val(),
+                    name: $(selectedGroups[0]).next('label').text().trim()
+                };
+                const group2 = {
+                    id: $(selectedGroups[1]).val(),
+                    name: $(selectedGroups[1]).next('label').text().trim()
+                };
 
-            if (twoGroupTests.includes(testType) && numSelectedGroups === 2) {
-                groupOrderSelectionDiv.show();
                 comparisonOrderSelect.empty();
-
-                const groupNames = {{ group_names|tojson }};
-                const groups = selectedGroups.map((_, el) => $(el).val()).get();
-
-                const group1Id = groups[0];
-                const group2Id = groups[1];
-                const group1Name = groupNames[group1Id];
-                const group2Name = groupNames[group2Id];
-
-                // Option 1: Group 2 vs Group 1 (Comparison vs Reference)
-                comparisonOrderSelect.append(`<option value="${group1Id}_${group2Id}">${group2Name} vs ${group1Name}</option>`);
-                // Option 2: Group 1 vs Group 2 (Reference vs Comparison)
-                comparisonOrderSelect.append(`<option value="${group2Id}_${group1Id}">${group1Name} vs ${group2Name}</option>`);
-
+                comparisonOrderSelect.append(`<option value="${group1.id}_${group2.id}">${group1.name} vs ${group2.name}</option>`);
+                comparisonOrderSelect.append(`<option value="${group2.id}_${group1.id}">${group2.name} vs ${group1.name}</option>`);
+                
+                groupOrderContainer.show();
             } else {
-                groupOrderSelectionDiv.hide();
+                groupOrderContainer.hide();
+                comparisonOrderSelect.empty();
             }
+        }
+
+        function updatePairedSamplesButtonVisibility() {
+            const selectedTest = $('#testType').val();
+            const isPairedTest = ['paired_ttest', 'paired_wilcoxon', 'anova_rm', 'friedman'].includes(selectedTest);
+            const selectedGroupsCount = $('.group-checkbox:checked').length;
+            $('#pairedSamplesContainer').toggle(isPairedTest && selectedGroupsCount >= 2);
         }
 
         function checkNormality() {
             const selectedGroups = $('.group-checkbox:checked').map((_, el) => $(el).val()).get();
             const normalityCard = $('#normalityResultsCard');
             const normalityContent = $('#normalityResultsContent');
-            const normalityRec = $('#normalityRecommendation');
+            const normalityRecommendation = $('#normalityRecommendation');
 
-            if (selectedGroups.length < 1) {
-                normalityCard.hide();
-                return;
-            }
+            if (selectedGroups.length > 0) {
+                normalityContent.html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Checking normality...</div>');
+                normalityCard.show();
 
-            normalityContent.html('<p class="text-muted">Checking normality...</p>');
-            normalityRec.text('');
-            normalityCard.show();
+                $.ajax({
+                    url: '{{ url_for("api.run_normality_check") }}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ groups: selectedGroups }),
+                    success: function(response) {
+                        if (response.error) {
+                            normalityContent.html(`<p class="text-danger">${response.error}</p>`);
+                            normalityRecommendation.empty();
+                        } else {
+                            let resultsHtml = '<ul class="list-group list-group-flush">';
+                            for (const [group, result] of Object.entries(response.results)) {
+                                resultsHtml += `<li class="list-group-item d-flex justify-content-between align-items-center">${group}<span class="badge bg-light text-dark">${result}</span></li>`;
+                            }
+                            resultsHtml += '</ul>';
+                            normalityContent.html(resultsHtml);
+                            normalityRecommendation.text(response.recommendation);
 
-            $.ajax({
-                url: '{{ url_for("api.check_normality_route") }}',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ groups: selectedGroups }),
-                success: function(response) {
-                    if (response.error) {
-                        normalityContent.html(`<p class="text-danger">${response.error}</p>`);
-                    } else {
-                        let resultsHtml = '<ul class="list-unstyled mb-0">';
-                        for (const groupName in response.results) {
-                            resultsHtml += `<li><strong>${groupName}:</strong> p-value = ${response.results[groupName]}</li>`;
+                            if (response.warnings && response.warnings.length > 0) {
+                                response.warnings.forEach(warning => {
+                                    window.showToast(warning, 'warning');
+                                });
+                            }
                         }
-                        resultsHtml += '</ul>';
-                        normalityContent.html(resultsHtml);
-                        normalityRec.text(response.recommendation);
+                    },
+                    error: function(xhr) {
+                        const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'Failed to check normality.';
+                        normalityContent.html(`<p class="text-danger">${errorMsg}</p>`);
+                        normalityRecommendation.empty();
+                        window.showToast(errorMsg, 'danger');
                     }
-                },
-                error: function() {
-                    normalityContent.html('<p class="text-danger">Failed to check normality.</p>');
-                }
-            });
+                });
+            } else {
+                normalityCard.hide();
+                normalityContent.empty();
+                normalityRecommendation.empty();
+            }
         }
 
         function init() {
+            // --- EVENT HANDLERS ---
             $('#testType').on('change.da', function() {
                 const selectedTest = $(this).val();
-                $('#pairedOptions').toggle(selectedTest === 'paired_ttest');
-                updateGroupOrderSelection(); // Call this on test type change
-                if (selectedTest === 'paired_ttest') {
-                    updatePairedOptions();
-                }
+                $('#anovaPosthocOptions').toggle(['anova', 'anova_rm'].includes(selectedTest));
+                updateGroupOrderSelection();
+                updatePairedSamplesButtonVisibility();
             }).trigger('change');
 
             $('.group-checkbox').on('change.da', function() {
-                const selectedTest = $('#testType').val();
-                const isPaired = ['paired_ttest', 'paired_wilcoxon'].includes(selectedTest);
-                if (isPaired) {
-                    updatePairedOptions();
+                updateGroupOrderSelection();
+                checkNormality();
+                updatePairedSamplesButtonVisibility();
+            });
+
+            $('#definePairsBtn').on('click.da', function() {
+                // Get selected groups
+                const selectedGroups = $('.group-checkbox:checked').map((_, el) => $(el).val()).get();
+                
+                if (selectedGroups.length < 2) {
+                    window.showToast('Please select at least two groups for a paired analysis.', 'warning');
+                    return;
                 }
-                updateGroupOrderSelection(); // Call this on group selection change
-                checkNormality(); // Automatically check normality
+                
+                // Show loading state
+                $('#pairingModalBody').html('<div class="text-center p-4"><i class="fas fa-spinner fa-spin me-2"></i>Loading pairing table...</div>');
+                
+                // Show the modal
+                const modalEl = document.getElementById('pairingModal');
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modalInstance.show();
+                
+                // Make AJAX request to get pairing table
+                $.ajax({
+                    url: '/api/get_pairing_table',
+                    method: 'GET',
+                    data: { groups: selectedGroups },
+                    success: function(response) {
+                        $('#pairingModalBody').html(response);
+                        
+                        // Add event listener for form submission
+                        $('#pairingForm').on('submit', function(e) {
+                            e.preventDefault();
+                            
+                            // Collect form data
+                            const formData = new FormData();
+                            const paired_map = [];
+                            
+                            document.querySelectorAll('#pairedSamplesTable tbody tr').forEach(tr => {
+                                const row = [tr.cells[0].innerText.trim()];
+                                tr.querySelectorAll('select').forEach(select => {
+                                    row.push(select.value);
+                                });
+                                paired_map.push(row);
+                            });
+                            
+                            formData.append('paired_map', JSON.stringify(paired_map));
+                            formData.append('groups', JSON.stringify(selectedGroups));
+                            
+                            // Submit via AJAX
+                            $.ajax({
+                                url: '/api/save_pairing_data',
+                                method: 'POST',
+                                data: formData,
+                                processData: false,
+                                contentType: false,
+                                success: function() {
+                                    window.showToast('Pairing data saved successfully!', 'success');
+                                    modalInstance.hide();
+                                },
+                                error: function(xhr) {
+                                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'Failed to save pairing data.';
+                                    window.showToast(errorMsg, 'danger');
+                                }
+                            });
+                        });
+                    },
+                    error: function(xhr) {
+                        const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'Failed to load pairing table.';
+                        $('#pairingModalBody').html(`<div class="alert alert-danger">${errorMsg}</div>`);
+                    }
+                });
+            });
+
+            $('#runPermanovaBtn').on('click.da', function() {
+                const btn = $(this);
+                const progress = $('#permanovaProgress');
+                const resultsContainer = $('#permanovaResultsContainer');
+                const resultsDiv = $('#permanovaResults');
+
+                const payload = {
+                    distance_metric: $('#distanceMetric').val(),
+                    permutations: $('#permutations').val()
+                };
+
+                progress.show();
+                btn.prop('disabled', true);
+                resultsContainer.hide();
+
+                $.ajax({
+                    url: '{{ url_for("api.run_permanova_route") }}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    success: function(response) {
+                        if (response.error) {
+                            window.showToast(response.error, 'danger');
+                        } else {
+                            window.showToast('PERMANOVA completed successfully!', 'success');
+                            resultsDiv.html(`
+                                <p class="mb-1"><strong>F-statistic:</strong> ${response.result.test_statistic.toFixed(4)}</p>
+                                <p class="mb-0"><strong>p-value:</strong> ${response.result.p_value.toFixed(4)}</p>
+                            `);
+                            resultsContainer.show();
+                        }
+                    },
+                    error: function(xhr) {
+                        const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
+                        window.showToast(errorMsg, 'danger');
+                    },
+                    complete: function() {
+                        progress.hide();
+                        btn.prop('disabled', false);
+                    }
+                });
             });
 
             $('#runAnalysisBtn').on('click.da', function() {
@@ -366,27 +488,15 @@
                     correction_method: $('#correctionMethod').val()
                 };
 
-                // Add group order to payload if visible
+                if ($('#anovaPosthocOptions').is(':visible')) {
+                    payload.posthoc_method = $('#anovaPosthoc').val();
+                }
+
                 if ($('#groupOrderSelection').is(':visible')) {
                     const selectedOrder = $('#comparisonOrderSelect').val();
                     const parts = selectedOrder.split('_');
                     payload.reference_group_id = parts[0];
                     payload.comparison_group_id = parts[1];
-                }
-
-                if (payload.test_type === 'paired_ttest') {
-                    payload.paired_map = [];
-                    $('.paired-selector').each(function() {
-                        const s1 = String($(this).data('sample1'));
-                        const s2 = String($(this).val());
-                        if (s1 && s2) {
-                            payload.paired_map.push([s1, s2]);
-                        }
-                    });
-                    if (payload.paired_map.length === 0) {
-                        window.showToast('Please map the paired samples before running the analysis.', 'warning');
-                        return;
-                    }
                 }
 
                 progress.show();
@@ -406,22 +516,20 @@
                             window.showToast('Analysis completed successfully!', 'success');
                             $('#resultsContainer').html(response.html);
 
-                            // Display normality results
-                            const normalityCard = $('#normalityResultsCard');
-                            const normalityContent = $('#normalityResultsContent');
-                            const normalityRec = $('#normalityRecommendation');
+                            if (response.significant_count !== undefined) {
+                                const message = `Found ${response.significant_count} significant features.`;
+                                window.showToast(message, 'info', 6000);
+                            }
 
-                            if (response.normality_results && Object.keys(response.normality_results).length > 0) {
-                                let resultsHtml = '<ul class="list-unstyled mb-0">';
-                                for (const groupName in response.normality_results) {
-                                    resultsHtml += `<li><strong>${groupName}:</strong> p-value = ${response.normality_results[groupName]}</li>`;
-                                }
-                                resultsHtml += '</ul>';
-                                normalityContent.html(resultsHtml);
-                                normalityRec.text(response.normality_recommendation);
-                                normalityCard.show();
-                            } else {
-                                normalityCard.hide();
+                            if (response.warnings && response.warnings.length > 0) {
+                                response.warnings.forEach(warning => {
+                                    window.showToast(warning, 'warning');
+                                });
+                            }
+                        if (response.warnings && response.warnings.length > 0) {
+                                response.warnings.forEach(warning => {
+                                    window.showToast(warning, 'warning');
+                                });
                             }
                         }
                     },
@@ -429,7 +537,6 @@
                         const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
                         window.showToast(errorMsg, 'danger');
                         $('#resultsContainer').html('<p class="text-danger">An error occurred.</p>');
-                        $('#normalityResultsCard').hide(); // Hide normality card on error
                     },
                     complete: function() {
                         progress.hide();
@@ -437,63 +544,19 @@
                     }
                 });
             });
-            
-            $('#runPermanovaBtn').on('click.da', function() {
-                const btn = $(this);
-                const progress = $('#permanovaProgress');
-                const resultsContainer = $('#permanovaResultsContainer');
-                const resultsDiv = $('#permanovaResults');
-
-                const payload = {
-                    distance_metric: $('#distanceMetric').val(),
-                    permutations: $('#permutations').val()
-                };
-
-                progress.show();
-                btn.prop('disabled', true);
-                resultsContainer.hide();
-                resultsDiv.html('');
-
-                $.ajax({
-                    url: '{{ url_for("api.run_permanova_route") }}',
-                    method: 'POST',
-                    contentType: 'application/json', 
-                    data: JSON.stringify(payload),
-                    success: function(response) {
-                        if (response.error) {
-                            window.showToast(response.error, 'danger');
-                        } else {
-                            window.showToast('PERMANOVA completed successfully!', 'success');
-                            resultsContainer.show();
-                            resultsDiv.html(
-                                `<ul class="list-unstyled">
-                                    <li><strong>Test Statistic:</strong> ${response.result.test_statistic.toFixed(4)}</li>
-                                    <li><strong>P-value:</strong> ${response.result.p_value.toFixed(4)}</li>
-                                </ul>`
-                            );
-                        }
-                    },
-                    error: function(xhr) {
-                        const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'An unexpected error occurred.';
-                        window.showToast(errorMsg, 'danger');
-                    },
-                    complete: function() {
-                        progress.hide();
-                        btn.prop('disabled', false);
-                    }
-                });
-            });
-
-            const resultsContainer = document.getElementById('resultsContainer');
-            if (resultsContainer && resultsContainer.textContent.trim().startsWith('<ul class="list-unstyled mb-0">')) {
-                resultsContainer.innerHTML = resultsContainer.textContent;
-            }
         }
 
         function cleanup() {
-            $('#testType, .group-checkbox, #runAnalysisBtn, #runPermanovaBtn').off('.da');
+            $('#testType, .group-checkbox, #runAnalysisBtn, #definePairsBtn, #runPermanovaBtn').off('.da');
+            
+            const modalEl = document.getElementById('pairingModal');
+            if (modalEl) {
+                const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {
+                    modalInstance.dispose();
+                }
+            }
         }
-
         if (window.pageScriptRegistry) {
             window.pageScriptRegistry.cleanup = cleanup;
         }

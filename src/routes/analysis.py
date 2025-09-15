@@ -30,7 +30,7 @@ def _create_group_vector(sample_cols, group_assignments, group_names):
 def metadata():
     df = data_manager.load_dataframe('df_main_path')
     if df is None:
-        flash('Please upload a file first')
+        flash('Please upload a file first', 'warning')
         return redirect(url_for('core.upload_file'))
     
     if request.method == 'POST':
@@ -57,7 +57,7 @@ def metadata():
         data_manager.save_dataframe(df_original, 'df_main_path', 'df_main')
 
         # Reset processing state since sample data might have changed
-        session['processing_steps'] = []
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for processing.'}]
         session['imputation_performed'] = False
         session['imputed_mask'] = None
         
@@ -102,7 +102,7 @@ def metadata():
 def view_groups():
     """View current group assignments"""
     if not session.get('group_vector'):
-        flash('No group assignments found. Please define groups in metadata first.')
+        flash('No group assignments found. Please define groups in metadata first.', 'warning')
         return redirect(url_for('analysis.metadata'))
     
     group_vector = session['group_vector']
@@ -190,7 +190,7 @@ def update_groups():
 def analysis():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please process sample data first')
+        flash('Please process sample data first', 'warning')
         return redirect(url_for('processing.imputation'))
     
     df = data_manager.load_dataframe(history_paths[-1])
@@ -205,7 +205,7 @@ def analysis():
 def multivariate_analysis():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please process sample data first')
+        flash('Please process sample data first', 'warning')
         return redirect(url_for('processing.imputation'))
 
     processing_steps = session.get('processing_steps', [])
@@ -222,7 +222,7 @@ def multivariate_analysis():
 def comparison():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please define sample data first')
+        flash('Please define sample data first', 'warning')
         return redirect(url_for('analysis.metadata'))
     
     df_original = data_manager.load_dataframe(history_paths[0])
@@ -249,7 +249,7 @@ def comparison():
 def differential_analysis():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please process sample data first')
+        flash('Please process sample data first', 'warning')
         return redirect(url_for('processing.imputation'))
     
     group_names = session.get('group_names', {})
@@ -275,7 +275,8 @@ def differential_analysis():
                            latest_differential_analysis_method=session.get('latest_differential_analysis_method'),
                            is_log_transformed=any_log_transformed,
                            is_scaled=any_scaled,
-                           is_normalized=any_normalized)
+                           is_normalized=any_normalized,
+                           paired_data=session.get('paired_data', {}))
 
 @analysis_bp.route('/result_visualization')
 def result_visualization():

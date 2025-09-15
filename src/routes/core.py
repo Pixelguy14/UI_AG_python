@@ -4,7 +4,6 @@ import os
 import io
 import pandas as pd
 import numpy as np
-import shutil
 import uuid
 
 # Import functions from other modules within the src package
@@ -122,7 +121,7 @@ def upload_file():
 def summary():
     df = data_manager.load_dataframe('df_main_path')
     if df is None:
-        flash('Please upload a file first')
+        flash('Please upload a file first','warning')
         return redirect(url_for('core.upload_file'))
     
     plots = {}
@@ -215,7 +214,7 @@ def summary():
 def dataframe_view():
     df = data_manager.load_dataframe('df_main_path')
     if df is None:
-        flash('Please upload a file first')
+        flash('Please upload a file first','warning')
         return redirect(url_for('core.upload_file'))
     
     df_html = df.to_html(classes='table table-striped table-hover', table_id='dataframe-table')
@@ -231,12 +230,12 @@ def dataframe_view():
 @core_bp.route('/reset')
 def reset():
     if session.get('df_main_path') is None:
-        flash('No data to reset')
+        flash('No data to reset','warning')
         return redirect(url_for('core.index'))
     
     data_manager.delete_all_session_dataframes()
     session.clear()
-    flash('Page reset successfully')
+    flash('Page reset successfully','success')
     return redirect(url_for('core.upload_file'))
 
 @core_bp.route('/export_dataframe/<string:format>/<string:context>')

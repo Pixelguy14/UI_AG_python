@@ -1,18 +1,21 @@
-from flask import Blueprint, jsonify, request, session # type: ignore
+from flask import Blueprint, jsonify, request, session, render_template, flash # type: ignore
 import pandas as pd
 import numpy as np
 import re
-from scipy.cluster.hierarchy import linkage, dendrogram # type: ignore
+import json
+import warnings
+
 
 # Import functions from other modules
 from ..functions.exploratory_data import preprocessing_summary_perVariable # type: ignore
-from ..functions.plot_definitions import ( # type: ignore
+from ..functions.plot_definitions import (
     create_pie_chart, create_density_plot, create_boxplot, create_violinplot,
-    create_pca_plot, create_hca_plot, create_plsda_plot, create_oplsda_plot
+    create_pca_plot, create_hca_plot, create_plsda_plot, create_oplsda_plot,
+    create_feature_clustergram
 )
 from ..functions.statistical_tests import (
-    run_t_test, run_mann_whitney_u, run_anova, run_kruskal_wallis,
-    run_friedman_test, run_permanova, apply_multiple_test_correction, format_anova_results_html, check_normality
+    run_t_test, run_mann_whitney_u, run_anova, run_anova_rm, run_kruskal_wallis,
+    run_friedman_test, run_permanova, apply_multiple_test_correction, format_anova_results_html, check_normality, run_wilcoxon_paired
 )
 from .. import data_manager
 
@@ -86,14 +89,14 @@ def column_density_plot_main(column_name):
 def get_distribution_plot(plot_type, context):
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        return jsonify({'error': 'No data available'})
-    
-    if context == 'before':
-        df_sample = data_manager.load_dataframe(history_paths[-2]) if len(history_paths) > 1 else data_manager.load_dataframe(history_paths[0])
+        df = data_manager.load_dataframe('df_main_path')
     else:
-        df_sample = data_manager.load_dataframe(history_paths[-1])
+        if context == 'before':
+            df = data_manager.load_dataframe(history_paths[-2]) if len(history_paths) > 1 else data_manager.load_dataframe(history_paths[0])
+        else:
+            df = data_manager.load_dataframe(history_paths[-1])
     
-    numeric_df = df_sample.select_dtypes(include=[np.number])
+    numeric_df = df.select_dtypes(include=[np.number])
     if numeric_df.empty:
         return jsonify({'error': 'No numeric data to plot'})
 
@@ -180,6 +183,27 @@ def get_comparison_data(history_index):
         'processed_shape': df_processed.shape
     })
 
+@api_bp.route('/clear_pairing_data', methods=['POST'])
+def clear_pairing_data():
+    session['paired_data'] = {}
+    session.modified = True
+    return jsonify({'success': True, 'message': 'Pairing data cleared.'})
+
+@api_bp.route('/save_pairing_data', methods=['POST'])
+def save_pairing_data():
+    data = request.form.to_dict()
+    paired_map_str = data.get('paired_map', '[]')
+    groups_str = data.get('groups', '[]')
+    
+    paired_map = json.loads(paired_map_str)
+    groups = json.loads(groups_str)
+
+    session['paired_data'] = {'paired_map': paired_map, 'groups': groups}
+    session.modified = True
+    
+    # Return a proper JSON response instead of empty content
+    return jsonify({'success': True, 'message': 'Pairing data saved successfully'})
+
 @api_bp.route('/run_differential_analysis', methods=['POST'])
 def run_differential_analysis():
     history_paths = session.get('df_history_paths', [])
@@ -187,18 +211,33 @@ def run_differential_analysis():
         return jsonify({'error': 'No sample data available'})
 
     data = request.json
-    test_type_full = data.get('test_type')
-    test_type_parts = test_type_full.split('_')
-    test_type = test_type_parts[0] # e.g., 'ttest', 'wilcoxon', 'anova', 'kruskal_wallis'
-    is_paired_test = 'paired' in test_type_parts # True for paired tests
-    is_independent_test = 'independent' in test_type_parts # True for independent tests
-
+    test_type = data.get('test_type')
     groups = data.get('groups')
     correction_method = data.get('correction_method')
-    paired_map = data.get('paired_map')
+    
+    # Get pairing data from session
+    paired_data = session.get('paired_data', {})
+    paired_map = paired_data.get('paired_map')
+    subject_id_col = paired_data.get('subject_id_col')
+
+    # --- Validation for Paired Tests ---
+    is_paired_test_type = test_type in ['paired_ttest', 'paired_wilcoxon', 'anova_rm', 'friedman']
+    if is_paired_test_type:
+        paired_for_groups = sorted(paired_data.get('groups', []))
+        current_groups_sorted = sorted(groups)
+        
+        if not paired_data or paired_for_groups != current_groups_sorted:
+            return jsonify({'error': 'The selected groups do not match the groups for which paired samples were defined. Please define pairs for the current group selection.'}), 400
+        
+        if test_type in ['paired_ttest', 'paired_wilcoxon'] and not paired_map:
+            return jsonify({'error': 'Paired test requires a non-empty paired map. Please define pairs.'}), 400
+        
+        if test_type in ['anova_rm', 'friedman'] and not paired_map:
+            return jsonify({'error': 'Multi-group paired test requires a non-empty paired map. Please define pairs.'}), 400
+    # --- End Validation ---
 
     df = data_manager.load_dataframe(history_paths[-1])
-    df.columns = df.columns.map(str) # Ensure df columns are strings
+    df.columns = df.columns.map(str)
     group_vector = session['group_vector']
     results_df = pd.DataFrame()
 
@@ -210,142 +249,165 @@ def run_differential_analysis():
     normality_results = {}
     normality_recommendation = ""
 
+    warning_messages = []
     try:
-        # --- Normality Check (for parametric tests) ---
-        parametric_tests = ['ttest', 'anova']
-        if test_type in parametric_tests:
-            # Determine which groups to check for normality
-            groups_to_check = []
-            if len(groups) == 2: # Two-group tests
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            # --- Normality Check (for parametric tests) ---
+            parametric_tests = ['ttest', 'paired_ttest', 'anova', 'anova_rm']
+            if test_type in parametric_tests:
+                groups_to_check = []
+                if len(groups) == 2:
+                    group1_id = int(reference_group_id)
+                    group2_id = int(comparison_group_id)
+                    group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
+                    group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                    groups_to_check.append((group1_id, group1_cols))
+                    groups_to_check.append((group2_id, group2_cols))
+                else:
+                    for gid in groups:
+                        group_cols = [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])]
+                        groups_to_check.append((int(gid), group_cols))
+                
+                all_normal = True
+                for gid, g_cols in groups_to_check:
+                    group_data = df[g_cols].values.flatten()
+                    group_data = group_data[~np.isnan(group_data)]
+                    group_name = session['group_names'][str(gid)]
+                    if len(group_data) > 2:
+                        test_name, p_val_normality = check_normality(pd.Series(group_data))
+                        if test_name != "Error" and not pd.isna(p_val_normality):
+                            normality_results[group_name] = f'{test_name}: p={p_val_normality:.3f}'
+                            if p_val_normality < 0.05:
+                                all_normal = False
+                        else:
+                            normality_results[group_name] = 'N/A (calculation error)'
+                            all_normal = False
+                    else:
+                        normality_results[group_name] = 'N/A (too few samples)'
+                        all_normal = False # Cannot confirm normality with too few samples
+                
+                if all_normal:
+                    normality_recommendation = "Data appears normally distributed. Parametric test is suitable."
+                else:
+                    normality_recommendation = "Data may not be normally distributed. Consider a non-parametric test."
+
+            # --- Run Statistical Test ---
+            if test_type == 'ttest' or test_type == 'paired_ttest':
+                if len(groups) != 2:
+                    return jsonify({'error': f'{test_type.replace("_", " ").title()} requires exactly two groups.'})
+                if not reference_group_id or not comparison_group_id:
+                    return jsonify({'error': 'Please select both reference and comparison groups.'})
+
                 group1_id = int(reference_group_id)
                 group2_id = int(comparison_group_id)
                 group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
                 group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-                groups_to_check.append((group1_id, group1_cols))
-                groups_to_check.append((group2_id, group2_cols))
-            else: # Multi-group tests (ANOVA)
-                for gid in groups:
-                    group_cols = [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])]
-                    groups_to_check.append((int(gid), group_cols))
-            
-            all_normal = True
-            for gid, g_cols in groups_to_check:
-                group_data = df[g_cols].values.flatten()
-                group_data = group_data[~np.isnan(group_data)]
-                if len(group_data) > 2: # Shapiro-Wilk requires at least 3 samples
-                    p_val_normality = check_normality(pd.Series(group_data))
-                    normality_results[session['group_names'][str(gid)]] = f'{p_val_normality:.3f}'
-                    if p_val_normality < 0.05: # Assuming alpha = 0.05 for normality test
-                        all_normal = False
+                
+                is_paired = (test_type == 'paired_ttest')
+                results_df = run_t_test(df, group1_cols, group2_cols, paired=is_paired, paired_map=paired_map, is_log_transformed=is_log_transformed)
+
+            elif test_type == 'mann_whitney':
+                if len(groups) != 2:
+                    return jsonify({'error': f'{test_type.replace("_", " ").title()} requires exactly two groups.'})
+                if not reference_group_id or not comparison_group_id:
+                    return jsonify({'error': 'Please select both reference and comparison groups.'})
+
+                group1_id = int(reference_group_id)
+                group2_id = int(comparison_group_id)
+                group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
+                group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                results_df = run_mann_whitney_u(df, group1_cols, group2_cols, is_log_transformed=is_log_transformed)
+
+            elif test_type == 'paired_wilcoxon':
+                if len(groups) != 2:
+                    return jsonify({'error': 'Paired Wilcoxon test requires exactly two groups.'}), 400
+                if not paired_map:
+                    return jsonify({'error': 'Paired Wilcoxon test requires a paired map.'}), 400
+                results_df = run_wilcoxon_paired(df, paired_map, is_log_transformed=is_log_transformed)
+
+            elif test_type == 'anova_rm':
+                if not paired_map:
+                    return jsonify({'error': 'ANOVA Repeated Measures requires a paired map.'}), 400
+                results_df = run_anova_rm(df, paired_map, is_log_transformed=is_log_transformed)
+
+            elif test_type == 'anova':
+                if len(groups) < 2:
+                    return jsonify({'error': 'ANOVA requires at least two groups.'})
+                
+                posthoc_method = data.get('posthoc_method', 'tukeyhsd') # Get posthoc method
+
+                if len(groups) == 2:
+                    if not reference_group_id or not comparison_group_id:
+                        return jsonify({'error': 'Please select both reference and comparison groups for two-group ANOVA.'})
+                    group1_id = int(reference_group_id)
+                    group2_id = int(comparison_group_id)
+                    group_map = {
+                        session['group_names'][str(group1_id)]: [col for col, info in group_vector.items() if group1_id in info.get('groups', [])],
+                        session['group_names'][str(group2_id)]: [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                    }
                 else:
-                    normality_results[session['group_names'][str(gid)]] = 'N/A (too few samples)'
-                    all_normal = False # Cannot confirm normality with too few samples
-            
-            if all_normal:
-                normality_recommendation = "Data appears normally distributed. Parametric test is suitable."
+                    group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+                
+                anova_results = run_anova(df, group_map)
+                results_df = format_anova_results_html(df, group_map, anova_results, posthoc_method=posthoc_method)
+
+            elif test_type == 'kruskal_wallis':
+                if len(groups) < 2:
+                    return jsonify({'error': 'Kruskal-Wallis requires at least two groups.'})
+                
+                if len(groups) == 2:
+                    if not reference_group_id or not comparison_group_id:
+                        return jsonify({'error': 'Please select both reference and comparison groups for two-group Kruskal-Wallis.'})
+                    group1_id = int(reference_group_id)
+                    group2_id = int(comparison_group_id)
+                    group_map = {
+                        session['group_names'][str(group1_id)]: [col for col, info in group_vector.items() if group1_id in info.get('groups', [])],
+                        session['group_names'][str(group2_id)]: [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
+                    }
+                else:
+                    group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
+                
+                results_df = run_kruskal_wallis(df, group_map, is_log_transformed=is_log_transformed)
+
+            elif test_type == 'friedman':
+                if len(groups) < 2:
+                    return jsonify({'error': 'Friedman test requires at least two groups.'})
+                if not paired_map:
+                    return jsonify({'error': 'Friedman test requires a paired map.'}), 400
+                results_df = run_friedman_test(df, paired_map, is_log_transformed=is_log_transformed)
+
             else:
-                normality_recommendation = "Data may not be normally distributed. Consider a non-parametric test."
+                return jsonify({'error': 'Invalid test type'})
 
-        # --- Run Statistical Test ---
-        if test_type == 'ttest':
-            if len(groups) != 2:
-                return jsonify({'error': f'{test_type.replace("_", " ").title()} requires exactly two groups.'})
-            
-            if not reference_group_id or not comparison_group_id:
-                return jsonify({'error': 'Please select both reference and comparison groups.'})
+            # Apply multiple test correction
+            if 'p_value' in results_df.columns and correction_method != 'none':
+                p_adj, rejected = apply_multiple_test_correction(results_df['p_value'], method=correction_method)
+                results_df['p_adj'] = p_adj
+                results_df['rejected'] = rejected
 
-            group1_id = int(reference_group_id)
-            group2_id = int(comparison_group_id)
-
-            group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
-            group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-
-            results_df = run_t_test(df, group1_cols, group2_cols, paired=is_paired_test, is_log_transformed=is_log_transformed)
-
-        elif test_type == 'wilcoxon':
-            if len(groups) != 2:
-                return jsonify({'error': f'{test_type.replace("_", " ").title()} requires exactly two groups.'})
-            
-            if not reference_group_id or not comparison_group_id:
-                return jsonify({'error': 'Please select both reference and comparison groups.'})
-
-            group1_id = int(reference_group_id)
-            group2_id = int(comparison_group_id)
-
-            group1_cols = [col for col, info in group_vector.items() if group1_id in info.get('groups', [])]
-            group2_cols = [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-
-            results_df = run_mann_whitney_u(df, group1_cols, group2_cols, is_log_transformed=is_log_transformed)
-
-        elif test_type == 'paired_wilcoxon':
-            if len(groups) != 2:
-                return jsonify({'error': 'Paired Wilcoxon test requires exactly two groups.'}), 400
-            paired_map = data.get('paired_map')
-            if not paired_map:
-                return jsonify({'error': 'Paired Wilcoxon test requires a paired map.'}), 400
-            results_df = run_wilcoxon_paired(df, paired_map, is_log_transformed=is_log_transformed)
-
-        elif test_type == 'anova':
-            if len(groups) < 2:
-                return jsonify({'error': 'ANOVA requires at least two groups.'})
-            
-            if len(groups) == 2: # If only two groups selected, apply order
-                if not reference_group_id or not comparison_group_id:
-                    return jsonify({'error': 'Please select both reference and comparison groups for two-group ANOVA.'})
-                group1_id = int(reference_group_id)
-                group2_id = int(comparison_group_id)
-                group_map = {
-                    session['group_names'][str(group1_id)]: [col for col, info in group_vector.items() if group1_id in info.get('groups', [])],
-                    session['group_names'][str(group2_id)]: [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-                }
-            else:
-                group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
-            
-            # Run ANOVA to get stats
-            anova_results = run_anova(df, group_map)
-            
-            results_df = format_anova_results_html(df, group_map, anova_results)
-
-        elif test_type == 'kruskal_wallis':
-            if len(groups) < 2:
-                return jsonify({'error': 'Kruskal-Wallis requires at least two groups.'})
-            
-            if len(groups) == 2: # If only two groups selected, apply order
-                if not reference_group_id or not comparison_group_id:
-                    return jsonify({'error': 'Please select both reference and comparison groups for two-group Kruskal-Wallis.'})
-                group1_id = int(reference_group_id)
-                group2_id = int(comparison_group_id)
-                group_map = {
-                    session['group_names'][str(group1_id)]: [col for col, info in group_vector.items() if group1_id in info.get('groups', [])],
-                    session['group_names'][str(group2_id)]: [col for col, info in group_vector.items() if group2_id in info.get('groups', [])]
-                }
-            else:
-                group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
-            
-            results_df = run_kruskal_wallis(df, group_map, is_log_transformed=is_log_transformed)
-
-        elif test_type == 'friedman': # NEW BLOCK FOR FRIEDMAN TEST
-            if len(groups) < 2: # Friedman test requires at least 2 groups, but typically 3+ for multi-group
-                return jsonify({'error': 'Friedman test requires at least two groups.'})
-            
-            # For Friedman, we assume paired data, so group_map needs to be constructed carefully
-            # It's a multi-group test, so we'll use the general group_map construction
-            group_map = {session['group_names'][gid]: [col for col, info in group_vector.items() if int(gid) in info.get('groups', [])] for gid in groups}
-            
-            results_df = run_friedman_test(df, group_map) # Call the new Friedman test function
-
-        else:
-            return jsonify({'error': 'Invalid test type'})
-
-        # Apply multiple test correction
-        if 'p_value' in results_df.columns and correction_method != 'none':
-            p_adj, rejected = apply_multiple_test_correction(results_df['p_value'], method=correction_method)
-            results_df['p_adj'] = p_adj
-            results_df['rejected'] = rejected
+        for warning_item in w:
+            if warning_item.category.__name__ == 'SmallSampleWarning' or issubclass(warning_item.category, RuntimeWarning):
+                warning_messages.append(str(warning_item.message))
 
         data_manager.save_dataframe(results_df, 'differential_analysis_results_path', 'differential_analysis_results')
-        session['latest_differential_analysis_method'] = test_type_full.replace("_", " ").title()
-        return jsonify({'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False), 'normality_results': normality_results, 'normality_recommendation': normality_recommendation})
+        significant_count = 0
+        if 'rejected' in results_df.columns:
+            significant_count = int(results_df['rejected'].sum())
+        elif 'p_adj' in results_df.columns:
+            significant_count = int((results_df['p_adj'] < 0.05).sum())
+        elif 'p_value' in results_df.columns:
+            significant_count = int((results_df['p_value'] < 0.05).sum())
+
+        session['latest_differential_analysis_method'] = test_type.replace("_", " ").title()
+        return jsonify({
+            'html': results_df.to_html(classes='table table-striped table-hover', table_id='resultsTable', escape=False), 
+            'normality_results': normality_results, 
+            'normality_recommendation': normality_recommendation,
+            'significant_count': significant_count,
+            'warnings': list(set(warning_messages))
+        })
 
     except Exception as e:
         return jsonify({'error': f'An error occurred during analysis: {str(e)}'})
@@ -376,192 +438,134 @@ def run_permanova_route():
         del df
         return jsonify({'error': f'PERMANOVA failed: {str(e)}'})
 
+@api_bp.route('/get_pairing_table', methods=['GET'])
+def get_pairing_table():
+    requested_groups = request.args.getlist('groups[]')
+    
+    group_vector = session.get('group_vector', {})
+    group_names = session.get('group_names', {})
+    paired_data = session.get('paired_data', {})
+    
+    saved_groups = paired_data.get('groups', [])
+
+    # Convert group IDs to strings for consistent comparison
+    requested_groups_str = sorted([str(g) for g in requested_groups])
+    saved_groups_str = sorted([str(g) for g in saved_groups])
+
+    if saved_groups_str and requested_groups_str != saved_groups_str:
+        flash('The selected groups have changed. Previously saved pairing data has been cleared.', 'warning')
+        session['paired_data'] = {}
+        session.modified = True
+        existing_paired_map = []
+    else:
+        existing_paired_map = paired_data.get('paired_map', [])
+
+    base_group_samples = []
+    if requested_groups:
+        base_group_id = int(requested_groups[0])
+        base_group_samples = [s for s, info in group_vector.items() if base_group_id in info.get('groups', [])]
+
+    return render_template('_paired_samples_table.html',
+                           selected_groups=requested_groups,
+                           group_names=group_names,
+                           group_vector=group_vector,
+                           existing_paired_map=existing_paired_map,
+                           base_group_samples=base_group_samples)
+
 @api_bp.route('/clustergram_data', methods=['POST'])
 def clustergram_data():
+    data = request.json
     differential_analysis_results = data_manager.load_dataframe('differential_analysis_results_path')
     if differential_analysis_results is None or differential_analysis_results.empty:
         return jsonify({'error': 'No analysis results found'}), 404
 
-    data = request.json
-    top_n = int(data.get('top_n', 50))
-    distance_metric = data.get('distance_metric', 'euclidean')
-    linkage_method = data.get('linkage_method', 'average')
-    y_axis_label = data.get('y_axis_label')
-    color_palette = data.get('color_palette', 'RdBu')
-
-    results_df = differential_analysis_results
     history_paths = session.get('df_history_paths', [])
     data_df = data_manager.load_dataframe(history_paths[-1])
-
-    is_scaled = 1 in session.get('step_scaling', [])
-
-    def format_value(val):
-        if isinstance(val, (int, float)):
-            if abs(val) > 10000 or (abs(val) < 0.0001 and val != 0):
-                return f'{val:.4e}'
-            return round(val, 4)
-        return val
-
-    # Get feature-level metadata (rt, mz, intensity)
-    feature_metadata_df = None
     feature_metadata_df = data_manager.load_dataframe('df_meta_thd_path')
     if feature_metadata_df is None or feature_metadata_df.empty:
         feature_metadata_df = data_manager.load_dataframe('df_metadata_path')
 
-    # Determine which p-value column to use
-    p_value_col = 'p_adj' if 'p_adj' in results_df.columns else 'p_value'
-    
-    # Determine significant features
-    if 'rejected' in results_df.columns:
-        significant_features_df = results_df[results_df['rejected']]
-    else:
-        significant_features_df = results_df[results_df[p_value_col] < 0.05]
+    result = create_feature_clustergram(
+        results_df=differential_analysis_results,
+        data_df=data_df,
+        feature_metadata_df=feature_metadata_df,
+        group_vector=session.get('group_vector', {}),
+        group_names=session.get('group_names', {}),
+        is_scaled=1 in session.get('step_scaling', []),
+        top_n=int(data.get('top_n', 50)),
+        distance_metric=data.get('distance_metric', 'euclidean'),
+        linkage_method=data.get('linkage_method', 'average'),
+        y_axis_label=data.get('y_axis_label'),
+        color_palette=data.get('color_palette', 'RdBu')
+    )
+    return jsonify(result)
 
-    if significant_features_df.empty:
-        return jsonify({'error': 'No significant features found to generate a clustergram. Adjust p-value threshold or check analysis results.'}), 404
 
-    significant_features = significant_features_df.nsmallest(top_n, p_value_col).index.unique()
-    plot_data = data_df.loc[significant_features]
-    numeric_plot_data = plot_data.select_dtypes(include=[np.number])
-    
-    if not is_scaled:
-        plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=1).fillna(0)
-    else:
-        plot_data_zscored = numeric_plot_data.fillna(0)
 
-    # plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=0).fillna(0)
+@api_bp.route('/verify_multi_group_pairing', methods=['POST'])
+def verify_multi_group_pairing():
+    data = request.json
+    groups = [int(g) for g in data.get('groups', [])]
+    subject_id_col = data.get('subject_id_col')
 
-    # row_linkage is for features (rows)
-    if plot_data_zscored.empty:
-        return jsonify({'error': 'No data for clustergram after z-scoring. This might happen if all significant features have zero variance.'}), 404
-    row_linkage = linkage(plot_data_zscored.values, method=linkage_method, metric=distance_metric)
-    # col_linkage is for samples (columns)
-    col_linkage = linkage(plot_data_zscored.T.values, method=linkage_method, metric=distance_metric)
-    
-    row_dendro = dendrogram(row_linkage, no_plot=True)
-    col_dendro = dendrogram(col_linkage, no_plot=True)
-    
-    # Reorder data using dendrogram leaves
-    plot_data_reordered = plot_data_zscored.iloc[row_dendro['leaves'], col_dendro['leaves']]
+    if not groups or not subject_id_col:
+        return jsonify({'error': 'Missing groups or subject ID column.'}), 400
 
-    # New: Determine y-axis labels based on user selection
-    y_labels = plot_data_reordered.index.tolist()
-    if y_axis_label and feature_metadata_df is not None and y_axis_label in feature_metadata_df.columns:
-        # Ensure metadata is aligned with the reordered data
-        aligned_metadata = feature_metadata_df.reindex(plot_data_reordered.reordered.index)
-        y_labels = aligned_metadata[y_axis_label].tolist()
-
-    y_labels = [format_value(label) for label in y_labels]
-
-    n_rows = len(plot_data_reordered.index) # Number of features
-    n_cols = len(plot_data_reordered.columns) # Number of samples
-
-    # Generate positions for heatmap (5, 15, 25, ...)
-    heatmap_x = [5 + 10*i for i in range(n_cols)] # Based on samples
-    heatmap_y = [5 + 10*i for i in range(n_rows)] # Based on features
-
-    # Heatmap Trace
-    max_abs = np.max(np.abs(plot_data_reordered.values))
-    heatmap_trace = {
-        'z': plot_data_reordered.values.tolist(),
-        'x': heatmap_x,
-        'y': heatmap_y,
-        'type': 'heatmap',
-        'colorscale': color_palette,
-        'zmin': -max_abs,
-        'zmax': max_abs,
-        'colorbar': {'title': 'Z-score'},
-        'hoverinfo': 'x+y+z',
-    }
-
-    # Prepare customdata for hover (combining sample group and feature metadata)
-    full_custom_data = []
-    metadata_column_names = ['Group'] # Start with 'Group' for sample metadata
-
-    if feature_metadata_df is not None and not feature_metadata_df.empty:
-        # Ensure feature_metadata_df is aligned with the reordered features (rows of heatmap)
-        feature_metadata_df = feature_metadata_df.reindex(plot_data_reordered.index)
-        metadata_column_names.extend(feature_metadata_df.columns.tolist())
-
+    df_main = data_manager.load_dataframe(session.get('df_history_paths', [])[-1])
+    df_metadata = data_manager.load_dataframe('df_metadata_path')
     group_vector = session.get('group_vector', {})
-    group_names_map = session.get('group_names', {})
+    group_names = session.get('group_names', {})
 
-    for row_label in plot_data_reordered.index: # Iterate through features (rows)
-        row_custom_data = []
-        for col_label in plot_data_reordered.columns: # Iterate through samples (columns)
-            cell_custom_data = []
+    if df_main is None or df_metadata is None:
+        return jsonify({'error': 'Dataframes not loaded.'}), 400
 
-            # Add sample group info
-            group_info = group_vector.get(col_label, {})
-            groups_assigned = group_info.get('groups', [])
-            if groups_assigned:
-                display_names = [group_names_map.get(str(gid), f'Group {gid}') for gid in groups_assigned]
-                cell_custom_data.append(', '.join(display_names))
-            else:
-                cell_custom_data.append('None')
+    if subject_id_col not in df_metadata.columns:
+        return jsonify({'error': f'Subject ID column "{subject_id_col}" not found in metadata.'}), 400
 
-            # Add feature metadata (rt, mz, intensity)
-            if feature_metadata_df is not None and not feature_metadata_df.empty:
-                feature_meta_values = feature_metadata_df.loc[row_label].values.tolist()
-                formatted_meta_values = [format_value(v) for v in feature_meta_values]
-                cell_custom_data.extend(formatted_meta_values)
+    unique_subjects = df_metadata[subject_id_col].dropna().unique().tolist()
+    
+    subject_completeness = {}
+    all_subjects_complete = True
+
+    for subject_id in unique_subjects:
+        subject_completeness[subject_id] = {'present_in_groups': [], 'missing_from_groups': []}
+        
+        # Get samples associated with this subject_id from metadata
+        subject_samples_meta = df_metadata[df_metadata[subject_id_col] == subject_id].index.tolist()
+        
+        for group_id in groups:
+            group_name = group_names.get(str(group_id), f'Group {group_id}')
             
-            row_custom_data.append(cell_custom_data)
-        full_custom_data.append(row_custom_data)
+            # Get samples assigned to this group from group_vector
+            group_samples_gv = [sample for sample, info in group_vector.items() if group_id in info.get('groups', [])]
+            
+            # Check for overlap between subject's samples and group's samples
+            # This assumes sample names in df_main columns match metadata index
+            overlapping_samples = [s for s in subject_samples_meta if s in group_samples_gv and s in df_main.columns]
 
-    # Column Dendrogram Traces (for samples)
-    col_dendro_traces = []
-    for i in range(len(col_dendro['icoord'])):
-        xs = col_dendro['icoord'][i]
-        ys = col_dendro['dcoord'][i]
-        col_dendro_traces.append({
-            'x': xs,
-            'y': ys,
-            'mode': 'lines',
-            'line': {'color': 'rgb(255,133,27)', 'width': 1},
-            'hoverinfo': 'none',
-        })
-
-    # Row Dendrogram Traces (for features)
-    row_dendro_traces = []
-    for i in range(len(row_dendro['icoord'])):
-        xs = row_dendro['dcoord'][i]
-        ys = row_dendro['icoord'][i]
-        row_dendro_traces.append({
-            'x': xs,
-            'y': ys,
-            'mode': 'lines',
-            'line': {'color': 'rgb(255,133,27)', 'width': 1},
-            'hoverinfo': 'none',
-        })
-
-    response_data = {
-        'heatmap': heatmap_trace,
-        'col_dendro': col_dendro_traces,
-        'row_dendro': row_dendro_traces,
-        'column_labels': plot_data_reordered.columns.tolist(), # Samples
-        'row_labels': y_labels, # Use the potentially updated labels
-        'heatmap_x': heatmap_x,
-        'heatmap_y': heatmap_y,
-        'heatmap_customdata': full_custom_data,
-        'metadata_column_names': metadata_column_names
+            if overlapping_samples:
+                subject_completeness[subject_id]['present_in_groups'].append(group_name)
+            else:
+                subject_completeness[subject_id]['missing_from_groups'].append(group_name)
+                all_subjects_complete = False
+    
+    summary = {
+        'total_unique_subjects': len(unique_subjects),
+        'all_subjects_complete': all_subjects_complete,
+        'subject_details': []
     }
 
-    # Clean up all dataframes
-    del differential_analysis_results
-    del results_df
-    del data_df
-    if feature_metadata_df is not None:
-        del feature_metadata_df
-    del significant_features_df
-    del plot_data
-    del numeric_plot_data
-    del plot_data_zscored
-    del plot_data_reordered
-    if 'aligned_metadata' in locals():
-        del aligned_metadata
+    for subject_id, details in subject_completeness.items():
+        status = 'Complete' if not details['missing_from_groups'] else 'Incomplete'
+        summary['subject_details'].append({
+            'subject_id': subject_id,
+            'status': status,
+            'present_in': ', '.join(details['present_in_groups']) if details['present_in_groups'] else 'None',
+            'missing_from': ', '.join(details['missing_from_groups']) if details['missing_from_groups'] else 'None'
+        })
 
-    return jsonify(response_data)
+    return jsonify({'success': True, 'summary': summary})
+
 
 @api_bp.route('/apply_regex_grouping', methods=['POST'])
 def apply_regex_grouping():
@@ -619,7 +623,7 @@ def apply_regex_grouping():
     })
 
 @api_bp.route('/check_normality', methods=['POST'])
-def check_normality_route():
+def run_normality_check():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
         return jsonify({'error': 'No sample data available'})
@@ -635,37 +639,49 @@ def check_normality_route():
 
     normality_results = {}
     all_normal = True
+    warning_messages = []
 
     try:
-        for group_id in groups:
-            gid = int(group_id)
-            group_cols = [col for col, info in group_vector.items() if gid in info.get('groups', [])]
-            if not group_cols:
-                continue
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
 
-            group_data = df[group_cols].values.flatten()
-            group_data = group_data[~np.isnan(group_data)]
-            
-            group_name = group_names.get(str(gid), f'Group {gid}')
+            for group_id in groups:
+                gid = int(group_id)
+                group_cols = [col for col, info in group_vector.items() if gid in info.get('groups', [])]
+                if not group_cols:
+                    continue
 
-            if len(group_data) > 2:
-                p_val_normality = check_normality(pd.Series(group_data))
-                normality_results[group_name] = f'{p_val_normality:.3g}'
-                if p_val_normality < 0.05:
+                group_data = df[group_cols].values.flatten()
+                group_data = group_data[~np.isnan(group_data)]
+                
+                group_name = group_names.get(str(gid), f'Group {gid}')
+
+                if len(group_data) > 2:
+                    test_name, p_val_normality = check_normality(pd.Series(group_data))
+                    if test_name != "Error" and not pd.isna(p_val_normality):
+                        normality_results[group_name] = f'{test_name}: p={p_val_normality:.3g}'
+                        if p_val_normality < 0.05:
+                            all_normal = False
+                    else:
+                        normality_results[group_name] = 'N/A (calculation error)'
+                        all_normal = False
+                else:
+                    normality_results[group_name] = 'N/A (too few samples)'
                     all_normal = False
-            else:
-                normality_results[group_name] = 'N/A (too few samples)'
-                all_normal = False
-        
+            
+            for warning_item in w:
+                if warning_item.category.__name__ == 'SmallSampleWarning' or issubclass(warning_item.category, RuntimeWarning):
+                    warning_messages.append(str(warning_item.message))
+
         if not normality_results:
-            return jsonify({'recommendation': 'Please select groups with data to check normality.', 'results': {}})
+            return jsonify({'recommendation': 'Please select groups with data to check normality.', 'results': {}, 'warnings': list(set(warning_messages))})
 
         if all_normal:
             recommendation = "Data appears normally distributed. Parametric tests are suitable."
         else:
             recommendation = "Data may not be normally distributed. Consider a non-parametric test."
 
-        return jsonify({'recommendation': recommendation, 'results': normality_results})
+        return jsonify({'recommendation': recommendation, 'results': normality_results, 'warnings': list(set(warning_messages))})
 
     except Exception as e:
         return jsonify({'error': f'An error occurred during normality check: {str(e)}'}), 500

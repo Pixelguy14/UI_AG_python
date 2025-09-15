@@ -14,4 +14,3 @@ rpy2
 scikit-bio
 openpyxl
 tables
-pytest-shutil

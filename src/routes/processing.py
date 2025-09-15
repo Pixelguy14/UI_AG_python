@@ -48,7 +48,7 @@ def _apply_processing_method(method_name, method_function, df, params):
 def imputation():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please define sample data first')
+        flash('Please define sample data first','warning')
         return redirect(url_for('analysis.metadata'))
     
     df_sample = data_manager.load_dataframe(history_paths[-1])
@@ -309,7 +309,7 @@ def replace_zeros():
 def normalization():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please define sample data first')
+        flash('Please define sample data first','warning')
         return redirect(url_for('analysis.metadata'))
     
     df_current = data_manager.load_dataframe(history_paths[-1])
@@ -389,7 +389,7 @@ def apply_normalization():
 def transformation():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please define sample data first')
+        flash('Please define sample data first','warning')
         return redirect(url_for('analysis.metadata'))
     
     df_current = data_manager.load_dataframe(history_paths[-1])
@@ -474,7 +474,7 @@ def apply_transformation():
 def scaling():
     history_paths = session.get('df_history_paths', [])
     if not history_paths:
-        flash('Please define sample data first')
+        flash('Please define sample data first','warning')
         return redirect(url_for('analysis.metadata'))
     
     df_current = data_manager.load_dataframe(history_paths[-1])

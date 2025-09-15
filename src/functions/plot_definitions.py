@@ -432,7 +432,7 @@ def create_pca_plot(df, title, group_vector=None, group_names=None):
         # Impute with mean for visualization purposes
         df_for_pca = numeric_df.T.fillna(numeric_df.T.mean())
         if df_for_pca.isnull().values.any(): # If NaNs still exist
-            return _create_empty_plot_with_message(title, "Not enough data for PCA after imputation")
+            return _create_empty_plot_with_message(title, "Not enough data for PCA")
     else:
         df_for_pca = numeric_df.T
 
@@ -1011,3 +1011,119 @@ def create_intensity_comparison_plot(original_df, imputed_df, apply_log_transfor
     )
 
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+def create_feature_clustergram(results_df, data_df, feature_metadata_df, group_vector, group_names, is_scaled, top_n=50, distance_metric='euclidean', linkage_method='average', y_axis_label=None, color_palette='RdBu'):
+    """Generates a clustergram of significant features."""
+    p_value_col = 'p_adj' if 'p_adj' in results_df.columns else 'p_value'
+    if 'rejected' in results_df.columns:
+        significant_features_df = results_df[results_df['rejected']]
+    else:
+        significant_features_df = results_df[results_df[p_value_col] < 0.05]
+
+    if significant_features_df.empty:
+        return {'error': 'No significant features found to generate a clustergram. Adjust p-value threshold or check analysis results.'}
+
+    significant_features = significant_features_df.nsmallest(top_n, p_value_col).index.unique()
+    plot_data = data_df.loc[significant_features]
+    numeric_plot_data = plot_data.select_dtypes(include=[np.number])
+    
+    if not is_scaled:
+        plot_data_zscored = numeric_plot_data.apply(lambda x: (x - x.mean()) / x.std() if x.std() != 0 else 0, axis=1).fillna(0)
+    else:
+        plot_data_zscored = numeric_plot_data.fillna(0)
+
+    if plot_data_zscored.empty:
+        return {'error': 'No data for clustergram after z-scoring.'}
+
+    row_linkage = linkage(plot_data_zscored.values, method=linkage_method, metric=distance_metric)
+    col_linkage = linkage(plot_data_zscored.T.values, method=linkage_method, metric=distance_metric)
+    
+    row_dendro = dendrogram(row_linkage, no_plot=True)
+    col_dendro = dendrogram(col_linkage, no_plot=True)
+    
+    plot_data_reordered = plot_data_zscored.iloc[row_dendro['leaves'], col_dendro['leaves']]
+
+    def format_value(val):
+        if isinstance(val, (int, float)):
+            if abs(val) > 10000 or (abs(val) < 0.0001 and val != 0):
+                return f'{val:.4e}'
+            return round(val, 4)
+        return val
+
+    y_labels = [format_value(label) for label in plot_data_reordered.index.tolist()]
+    if y_axis_label and feature_metadata_df is not None and y_axis_label in feature_metadata_df.columns:
+        aligned_metadata = feature_metadata_df.reindex(plot_data_reordered.index)
+        y_labels = [format_value(label) for label in aligned_metadata[y_axis_label].tolist()]
+
+    n_rows, n_cols = plot_data_reordered.shape
+    heatmap_x = [5 + 10*i for i in range(n_cols)]
+    heatmap_y = [5 + 10*i for i in range(n_rows)]
+
+    max_abs = np.max(np.abs(plot_data_reordered.values))
+    heatmap_trace = {
+        'z': plot_data_reordered.values.tolist(), 'x': heatmap_x, 'y': heatmap_y,
+        'type': 'heatmap', 'colorscale': color_palette, 'zmin': -max_abs, 'zmax': max_abs,
+        'colorbar': {'title': 'Z-score'}, 'hoverinfo': 'x+y+z',
+    }
+
+    col_dendro_traces = []
+    for i in range(len(col_dendro['icoord'])):
+        xs = col_dendro['icoord'][i]
+        ys = col_dendro['dcoord'][i]
+        col_dendro_traces.append({
+            'x': xs,
+            'y': ys,
+            'mode': 'lines',
+            'line': {'color': 'rgb(255,133,27)', 'width': 1},
+            'hoverinfo': 'none',
+        })
+
+    row_dendro_traces = []
+    for i in range(len(row_dendro['icoord'])):
+        xs = row_dendro['dcoord'][i]
+        ys = row_dendro['icoord'][i]
+        row_dendro_traces.append({
+            'x': xs,
+            'y': ys,
+            'mode': 'lines',
+            'line': {'color': 'rgb(255,133,27)', 'width': 1},
+            'hoverinfo': 'none',
+        })
+
+    full_custom_data = []
+    metadata_column_names = ['Group']
+    if feature_metadata_df is not None and not feature_metadata_df.empty:
+        feature_metadata_df = feature_metadata_df.reindex(plot_data_reordered.index)
+        metadata_column_names.extend(feature_metadata_df.columns.tolist())
+
+    group_names_map = group_names if group_names else {}
+
+    for row_label in plot_data_reordered.index:
+        row_custom_data = []
+        for col_label in plot_data_reordered.columns:
+            cell_custom_data = []
+            group_info = group_vector.get(col_label, {})
+            groups_assigned = group_info.get('groups', [])
+            if groups_assigned:
+                display_names = [group_names_map.get(str(gid), f'Group {gid}') for gid in groups_assigned]
+                cell_custom_data.append(', '.join(display_names))
+            else:
+                cell_custom_data.append('None')
+
+            if feature_metadata_df is not None and not feature_metadata_df.empty and row_label in feature_metadata_df.index:
+                feature_meta_values = feature_metadata_df.loc[row_label].values.tolist()
+                formatted_meta_values = [format_value(v) for v in feature_meta_values]
+                cell_custom_data.extend(formatted_meta_values)
+            
+            row_custom_data.append(cell_custom_data)
+        full_custom_data.append(row_custom_data)
+
+    response_data = {
+        'heatmap': heatmap_trace, 'col_dendro': col_dendro_traces, 'row_dendro': row_dendro_traces,
+        'column_labels': plot_data_reordered.columns.tolist(), 'row_labels': y_labels,
+        'heatmap_x': heatmap_x, 'heatmap_y': heatmap_y,
+        'heatmap_customdata': full_custom_data, 'metadata_column_names': metadata_column_names
+    }
+    return response_data
+
+
