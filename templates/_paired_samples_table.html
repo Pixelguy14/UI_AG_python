@@ -89,7 +89,7 @@
         $('#pairedSamplesTable').on('change', '.paired-sample-select', updateAllDropdowns);
 
         // Initial update to disable already selected samples if any
-        setTimeout(updateAllDropdowns, 0);
+        setTimeout(updateAllDropdowns, 50);
         
         // Handle save button click
         $('#savePairsBtn').on('click', function() {

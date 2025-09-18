@@ -105,7 +105,7 @@
         if (event.target === document.body) {
             setTimeout(function() {
                 window.showToast('Welcome! The notification system is working correctly.', 'success');
-            }, 500);
+            }, 50);
             
             // Remove this specific listener so it doesn't fire again on partial swaps.
             document.body.removeEventListener('htmx:load', showWelcomeToast);

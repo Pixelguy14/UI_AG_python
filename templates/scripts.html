@@ -1,13 +1,11 @@
-<!-- jQuery -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
-    <!-- Chart.js Annotation Plugin -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.4.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
     <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.7"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
 
     <script>
       // --- GLOBAL SCRIPT MANAGER FOR CLEANUP ---
@@ -36,19 +34,11 @@
       document.body.addEventListener('htmx:beforeSwap', function(evt) {
           // Handle sidebar visibility before content swap to prevent flash
           handleSidebarVisibility();
-          
-          // Add fade-out animation before swapping
-          if (evt.detail.target) {
-              evt.detail.target.style.opacity = '0';
-              evt.detail.target.style.transform = 'translateY(-10px)';
-          }
       });
 
       document.body.addEventListener('htmx:afterSwap', function(evt) {
           // Add fade-in animation after swapping
           if (evt.detail.target) {
-              evt.detail.target.style.opacity = '1';
-              evt.detail.target.style.transform = 'translateY(0)';
               evt.detail.target.classList.add('fade-in');
           }
 
@@ -127,18 +117,22 @@
             new bootstrap.Dropdown(toggle);
         });
 
-        // Collapses (using data-bs-toggle for automatic behavior)
-        document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function(toggle) {
-            var targetSelector = toggle.getAttribute('data-bs-target');
+        // Manual Collapse Toggle for HTMX compatibility
+        document.querySelectorAll('.js-collapse-toggle').forEach(function(toggle) {
+            const targetSelector = toggle.getAttribute('data-bs-target');
             if (!targetSelector) return;
-            var targetElement = document.querySelector(targetSelector);
-            if (!targetElement) return;
-            
-            var instance = bootstrap.Collapse.getInstance(targetElement);
-            if (instance) {
-                instance.dispose();
+            const targetElement = document.querySelector(targetSelector);
+            if (targetElement) {
+                // Ensure the instance exists so we can call methods on it
+                const collapseInstance = bootstrap.Collapse.getOrCreateInstance(targetElement, {
+                    toggle: false
+                });
+                // Assign a direct, overwriting onclick handler to prevent duplicate listeners
+                toggle.onclick = function(e) {
+                    e.preventDefault();
+                    collapseInstance.toggle();
+                };
             }
-            new bootstrap.Collapse(targetElement, { toggle: false });
         });
 
         // Tooltips
@@ -182,7 +176,7 @@
             window.showToast('Replacing all zeros with NaN values', 'info');
         });
 
-        // Method Description Radios
+        // Method Description for the radiobuttons
         const methodDescriptions = {
             'n_imputation': 'Replaces missing values with a small constant value.',
             'half_minimum': 'Replaces missing values with half of the minimum observed value.',

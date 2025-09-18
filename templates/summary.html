@@ -160,7 +160,7 @@
                 // Use a slight delay to allow the skeleton to be visible and improve perceived performance
                 setTimeout(() => {
                     Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
-                }, 150);
+                }, 50);
             } catch (e) {
                 plotDiv.innerHTML = '<div class="alert alert-danger">Failed to parse plot data.</div>';
                 // console.error("Error parsing plot JSON:", e);
@@ -247,6 +247,20 @@
         }
 
         function cleanup() {
+            const plotIds = [
+                'meanIntensityPlot', 
+                'correlationPlot', 
+                'missingHeatmapPlot', 
+                'allColumnsDensityPlot', 
+                'boxplotDistributionPlot'
+            ];
+            plotIds.forEach(id => {
+                const plotDiv = document.getElementById(id);
+                if (plotDiv) {
+                    Plotly.purge(plotDiv);
+                }
+            });
+
             if (summaryResizeHandlers) {
                 summaryResizeHandlers.forEach(({ handler }) => {
                     window.removeEventListener('resize', handler);

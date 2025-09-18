@@ -20,8 +20,8 @@
                     </p>
                     
                     <!-- Group Definition Section -->
-                    <div class="card mb-4 animated-card">
-                        <div class="card-header bg-light">
+                    <div class="mb-4">
+                        <div class="card-header">
                             <h5 class="mb-0">
                                 <i class="fas fa-users me-2"></i>
                                 Define Experimental Groups
@@ -342,8 +342,12 @@
                     if (response.success) {
                         window.showToast('Assignments and groups saved successfully!', 'success');
                         setTimeout(() => {
-                            htmx.ajax('GET', '/summary', { target: 'body', swap: 'outerHTML' });
-                        }, 1000);
+                            htmx.ajax('GET', '/summary', {
+                                target: 'body',
+                                swap: 'outerHTML',
+                                pushUrl: true
+                            });
+                        }, 50);
                     } else {
                         window.showToast('Error saving assignments: ' + response.message, 'danger');
                     }
