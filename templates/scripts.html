@@ -1,0 +1,203 @@
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@2.0.7"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
+
+    <script>
+      // --- GLOBAL SCRIPT MANAGER FOR CLEANUP ---
+      window.pageScriptRegistry = { cleanup: null };
+
+      // Single listener to clean up old page scripts before swapping
+      document.body.addEventListener('htmx:beforeSwap', function(evt) {
+          if (window.pageScriptRegistry.cleanup) {
+              window.pageScriptRegistry.cleanup();
+              window.pageScriptRegistry.cleanup = null; // De-register after running
+          }
+      });
+
+      document.body.addEventListener('htmx:beforeRequest', function(evt) {
+          // Add loading class to the triggering element
+          evt.detail.elt.classList.add('htmx-request');
+          // Store start time for performance measurement
+          evt.detail.xhr.startTime = performance.now();
+      });
+
+      document.body.addEventListener('htmx:afterRequest', function(evt) {
+          // Remove loading class from the triggering element
+          evt.detail.elt.classList.remove('htmx-request');
+      });
+
+      document.body.addEventListener('htmx:beforeSwap', function(evt) {
+          // Handle sidebar visibility before content swap to prevent flash
+          handleSidebarVisibility();
+      });
+
+      document.body.addEventListener('htmx:afterSwap', function(evt) {
+          // Add fade-in animation after swapping
+          if (evt.detail.target) {
+              evt.detail.target.classList.add('fade-in');
+          }
+
+          // Calculate and log HTMX load time
+          const startTime = evt.detail.xhr.startTime;
+          if (startTime) {
+              const duration = performance.now() - startTime;
+              console.log(`HTMX content loaded and swapped in ${duration.toFixed(2)}ms`);
+          }
+      });
+
+      // --- GLOBAL TOAST NOTIFICATION HANDLER ---
+      function showToast(message, category = 'info') {
+          const toastContainer = document.getElementById('toast-container');
+          if (!toastContainer) return;
+
+          const toastId = 'toast-' + Date.now();
+          const icons = {
+              success: 'fa-check-circle',
+              danger: 'fa-times-circle',
+              warning: 'fa-exclamation-triangle',
+              info: 'fa-info-circle'
+          };
+          const icon = icons[category] || icons.info;
+
+          const toastHtml = `
+              <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+                  <div class="toast-header bg-${category} text-white">
+                      <i class="fas ${icon} me-2"></i>
+                      <strong class="me-auto">Notification</strong>
+                      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+                  </div>
+                  <div class="toast-body">
+                      ${message}
+                  </div>
+              </div>
+          `;
+
+          toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+          
+          const toastElement = document.getElementById(toastId);
+          const toast = new bootstrap.Toast(toastElement);
+
+          toastElement.addEventListener('hidden.bs.toast', function () {
+              toastElement.remove();
+          });
+
+          toast.show();
+      }
+      // Make it globally accessible
+      window.showToast = showToast;
+
+      // --- Sidebar Visibility Handler ---
+      function handleSidebarVisibility() {
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        if (sidebar && sidebarToggle) {
+          const isHidden = window.location.pathname === '/' || window.location.pathname.endsWith('upload')|| window.location.pathname.endsWith('metadata')|| window.location.pathname.endsWith('groups');
+          sidebar.style.display = isHidden ? 'none' : '';
+          sidebarToggle.style.display = isHidden ? 'none' : '';
+        }
+      }
+
+      // --- HTMX ONLOAD: Main UI Initialization and Event Attachment ---
+      htmx.onLoad(function(content) {
+        // 1. Handle Sidebar Visibility
+        handleSidebarVisibility();
+
+        // 2. Re-initialize Bootstrap Components
+        // Dropdowns
+        document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(toggle) {
+            var instance = bootstrap.Dropdown.getInstance(toggle);
+            if (instance) {
+                instance.dispose();
+            }
+            new bootstrap.Dropdown(toggle);
+        });
+
+        // Manual Collapse Toggle for HTMX compatibility
+        document.querySelectorAll('.js-collapse-toggle').forEach(function(toggle) {
+            const targetSelector = toggle.getAttribute('data-bs-target');
+            if (!targetSelector) return;
+            const targetElement = document.querySelector(targetSelector);
+            if (targetElement) {
+                // Ensure the instance exists so we can call methods on it
+                const collapseInstance = bootstrap.Collapse.getOrCreateInstance(targetElement, {
+                    toggle: false
+                });
+                // Assign a direct, overwriting onclick handler to prevent duplicate listeners
+                toggle.onclick = function(e) {
+                    e.preventDefault();
+                    collapseInstance.toggle();
+                };
+            }
+        });
+
+        // Tooltips
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (tooltipTriggerEl) {
+            var instance = bootstrap.Tooltip.getInstance(tooltipTriggerEl);
+            if(instance) {
+                instance.dispose();
+            }
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // 3. Re-attach Custom Event Listeners for Sidebar Buttons and Controls
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        if (sidebarToggle) {
+            sidebarToggle.onclick = function() { // Using onclick to overwrite any previous listener
+                const sidebar = document.getElementById('sidebar');
+                const toggleIcon = document.getElementById('toggleIcon');
+                if (sidebar && toggleIcon) {
+                    sidebar.classList.toggle('expanded');
+                    toggleIcon.className = sidebar.classList.contains('expanded') ? 'fas fa-chevron-left' : 'fas fa-chevron-right';
+                }
+            };
+        }
+
+        // Initialize sidebar components
+        initThresholding();
+        initCleaning();
+        initImputation();
+        initNormalization();
+        initTransformation();
+        initScaling();
+
+              });
+          </script>
+      
+          {% include 'sidebar_scripts.html' %}
+      
+          {% with messages = get_flashed_messages(with_categories=true) %}    {% if messages %}
+        <script>
+            (function() {
+                let messages = {{ messages|tojson }};
+                function showFlashedToasts() {
+                    if (!messages) return;
+                    for (const [category, message] of messages) {
+                        window.showToast(message, category);
+                    }
+                    messages = null;
+                }
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', showFlashedToasts, { once: true });
+                } else {
+                    showFlashedToasts();
+                }
+                document.body.addEventListener('htmx:afterSwap', showFlashedToasts, { once: true });
+            })();
+        </script>
+    {% endif %}
+{% endwith %}
+    
+    <script>
+        window.addEventListener('load', () => {
+            const [performanceNavigationTiming] = performance.getEntriesByType("navigation");
+            if (performanceNavigationTiming) {
+                console.log(`Page fully loaded in: ${performanceNavigationTiming.duration.toFixed(2)}ms`);
+            }
+        });
+    </script>

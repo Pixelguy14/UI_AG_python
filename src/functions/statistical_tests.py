@@ -6,9 +6,11 @@ perform a specific statistical test, and return the results as a DataFrame.
 
 import pandas as pd
 import numpy as np
-from scipy.stats import ttest_ind, ttest_rel, mannwhitneyu, wilcoxon, f_oneway, kruskal, shapiro, friedmanchisquare # type: ignore
+from scipy.stats import ttest_ind, ttest_rel, mannwhitneyu, wilcoxon, f_oneway, kruskal, shapiro, friedmanchisquare, kstest # type: ignore
 from statsmodels.stats.multitest import multipletests # type: ignore
-from statsmodels.stats.multicomp import pairwise_tukeyhsd # type: ignore
+from statsmodels.stats.diagnostic import lilliefors # type: ignore
+from statsmodels.stats.multicomp import pairwise_tukeyhsd, MultiComparison # type: ignore
+from statsmodels.stats.anova import AnovaRM
 import statsmodels.formula.api as smf # type: ignore
 from skbio.stats.distance import permanova, DistanceMatrix # type: ignore
 from scipy.spatial.distance import pdist, squareform # type: ignore
@@ -92,9 +94,10 @@ def run_mann_whitney_u(
             p_values.append(np.nan)
             continue
             
-        # Warn on small sample sizes
+        # For small sample sizes, the test is not meaningful.
         if len(g1) < 3 or len(g2) < 3:
-            raise ValueError(f"Small sample size (n1={len(g1)}, n2={len(g2)}) for index {idx}")
+            p_values.append(np.nan)
+            continue
             
         try:
             _, p_val = mannwhitneyu(g1, g2, alternative='two-sided')
@@ -179,7 +182,8 @@ def format_anova_results_html(
     data: pd.DataFrame,
     group_map: Dict[str, List[str]],
     anova_results: pd.DataFrame,
-    alpha: float = 0.05
+    alpha: float = 0.05,
+    posthoc_method: str = 'tukeyhsd'
 ) -> pd.DataFrame:
     """
     Formats ANOVA results with post-hoc tests and group stats into an HTML-ready DataFrame.
@@ -188,8 +192,6 @@ def format_anova_results_html(
     formatted_results = []
     for index, row in data.iterrows():
         p_val_series = anova_results.loc[index, 'p_value']
-        # If p_val_series is a Series with multiple items (due to non-unique index), take the first one.
-        # This is a pragmatic fix; ideally, the DataFrame index should be unique.
         p_val = p_val_series.iloc[0] if isinstance(p_val_series, pd.Series) else p_val_series
         
         post_hoc_html = 'Not run (p >= 0.05)'
@@ -197,20 +199,29 @@ def format_anova_results_html(
             try:
                 groups_data = [row[cols].dropna() for cols in group_map.values()]
                 all_data = np.concatenate([g.to_numpy(dtype=float) for g in groups_data])
-                group_labels = np.concatenate([[name] * len(g) for name, g in zip(group_map.keys(), groups_data)]) # type: ignore
+                group_labels = np.concatenate([[name] * len(g) for name, g in zip(group_map.keys(), groups_data)])
                 
-                # Add check for sufficient samples for Tukey HSD
                 if any(len(g) < 2 for g in groups_data):
-                    post_hoc_html = "<div class='text-warning'>Tukey HSD requires at least 2 samples per group.</div>"
-                elif len(np.unique(group_labels)) > 1: # type: ignore
-                    tukey_res = pairwise_tukeyhsd(all_data, group_labels, alpha=alpha)
-                    post_hoc_df = pd.DataFrame(data=tukey_res._results_table.data[1:], columns=tukey_res._results_table.data[0])
-                    
-                    html_items = [
-                        f"<li><strong>{r['group1']} vs {r['group2']}:</strong> {r['p-adj']:.3f}{'*' if r['reject'] else ''}</li>"
-                        for _, r in post_hoc_df.iterrows()
-                    ]
-                    post_hoc_html = f"<ul class='list-unstyled mb-0'>{''.join(html_items)}</ul>"
+                    post_hoc_html = f"<div class='text-warning'>Post-hoc test requires at least 2 samples per group.</div>"
+                elif len(np.unique(group_labels)) > 1:
+                    if posthoc_method == 'tukeyhsd':
+                        tukey_res = pairwise_tukeyhsd(all_data, group_labels, alpha=alpha)
+                        post_hoc_df = pd.DataFrame(data=tukey_res._results_table.data[1:], columns=tukey_res._results_table.data[0])
+                        html_items = [
+                            f"<li><strong>{r['group1']} vs {r['group2']}:</strong> {r['p-adj']:.3f}{'*' if r['reject'] else ''}</li>"
+                            for _, r in post_hoc_df.iterrows()
+                        ]
+                        post_hoc_html = f"<h6>Tukey's HSD</h6><ul class='list-unstyled mb-0'>{''.join(html_items)}</ul>"
+                    else: # For bonferroni, holm, etc.
+                        mc = MultiComparison(all_data, group_labels)
+                        results_table, _, _ = mc.allpairtest(alpha=alpha, method=posthoc_method)
+                        df = pd.DataFrame(results_table.data[1:], columns=[str(x) for x in results_table.data[0]])
+                        
+                        html_items = [
+                            f"<li><strong>{r.group1} vs {r.group2}:</strong> {r.pval_corr:.3f}{'*' if r.reject else ''}</li>"
+                            for r in df.itertuples()
+                        ]
+                        post_hoc_html = f"<h6>{posthoc_method.capitalize()} Correction</h6><ul class='list-unstyled mb-0'>{''.join(html_items)}</ul>"
                 else:
                     post_hoc_html = "Only one group with data."
             except Exception as e:
@@ -225,12 +236,15 @@ def format_anova_results_html(
         group_stats_html = f"<ul class='list-unstyled mb-0'>{''.join(stats_html_items)}</ul>"
 
         formatted_results.append({
-            'post_hoc_tukey': post_hoc_html,
+            'post_hoc': post_hoc_html, # Changed column name to be generic
             'group_stats': group_stats_html
         })
 
     # Combine with original ANOVA results
     formatted_df = pd.DataFrame(formatted_results, index=data.index)
+    # Drop old column if it exists to avoid conflicts
+    if 'post_hoc_tukey' in anova_results.columns:
+        anova_results = anova_results.drop(columns=['post_hoc_tukey'])
     return anova_results.join(formatted_df)
 
 def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]], is_log_transformed: bool = False) -> pd.DataFrame:
@@ -289,43 +303,201 @@ def run_kruskal_wallis(data: pd.DataFrame, group_map: Dict[str, List[str]], is_l
 
     return pd.DataFrame({'p_value': p_values, 'log2FC': log2fc_values}, index=data.index)
 
-def run_friedman_test(data: pd.DataFrame, group_map: Dict[str, List[str]]) -> pd.DataFrame:
+def run_friedman_test(
+    data: pd.DataFrame,
+    paired_map: List[List[str]],
+    is_log_transformed: bool = False
+) -> pd.DataFrame:
     """
-    Performs the Friedman test row by row.
-    Assumes data is already aligned for paired samples.
+    Performs the Friedman test row by row for paired multi-group data.
+    The paired_map defines the mapping of samples for each subject across groups.
     """
     p_values = []
-    for index, row in data.iterrows():
-        groups_data = [row[cols].dropna() for cols in group_map.values()]
+    log2fc_values = [] # For multi-group, log2FC is often relative to a baseline or overall mean
+    epsilon = 1 # For log2FC calculation
 
-        # Friedman test requires at least 3 groups and each group must have at least 1 observation
-        if len(groups_data) < 3 or any(len(g) == 0 for g in groups_data):
+    if not paired_map:
+        raise ValueError("Friedman test requires a non-empty 'paired_map'.")
+
+    # Determine the number of groups from the paired_map (length of inner list)
+    num_groups = len(paired_map[0])
+    if num_groups < 3:
+        raise ValueError("Friedman test requires at least 3 related groups.")
+
+    # Extract group names from the first entry of paired_map for log2FC calculation
+    # This assumes the order of samples in paired_map corresponds to the order of groups
+    # as selected by the user. For log2FC, we'll compare the last group to the first group.
+    # This is a simplification; a more robust approach might involve defining a reference group.
+    group_sample_names_ordered = [paired_map[0][i] for i in range(num_groups)]
+
+    for index, row in data.iterrows():
+        subject_data_for_friedman = []
+        valid_subjects_count = 0
+
+        # Collect data for each subject across all groups
+        for subject_samples in paired_map:
+            values_for_subject = []
+            is_subject_valid = True
+            for sample_name in subject_samples:
+                if sample_name in row and pd.notna(row[sample_name]):
+                    values_for_subject.append(row[sample_name])
+                else:
+                    is_subject_valid = False
+                    break # This subject is missing data for one of the groups
+            
+            if is_subject_valid and len(values_for_subject) == num_groups:
+                subject_data_for_friedman.append(values_for_subject)
+                valid_subjects_count += 1
+        
+        if valid_subjects_count < 1: # Friedman requires at least one complete subject
             p_values.append(np.nan)
+            log2fc_values.append(np.nan)
             continue
 
-        # Ensure all groups have the same number of observations for Friedman test
-        # This implies that the data is already "paired" or "repeated measures"
-        num_observations = len(groups_data[0])
-        if not all(len(g) == num_observations for g in groups_data):
-            # This scenario should ideally be handled before calling this function
-            # or by ensuring the input data structure is strictly paired.
-            # For now, we'll return NaN or raise an error.
+        # Transpose data for friedmanchisquare: each list is a group's values across subjects
+        # e.g., [group1_s1, group1_s2, ...], [group2_s1, group2_s2, ...]
+        friedman_input_groups = [[] for _ in range(num_groups)]
+        for subject_values in subject_data_for_friedman:
+            for i, val in enumerate(subject_values):
+                friedman_input_groups[i].append(val)
+
+        # Check if all groups have at least one observation
+        if any(len(g) == 0 for g in friedman_input_groups):
             p_values.append(np.nan)
+            log2fc_values.append(np.nan)
             continue
 
         try:
-            _, p_val = friedmanchisquare(*groups_data)
+            _, p_val = friedmanchisquare(*[np.array(g) for g in friedman_input_groups])
             p_values.append(p_val)
-        except ValueError:
-            p_values.append(np.nan)
+        except ValueError: # e.g., if all values are identical within a group
+            p_values.append(1.0) # Or np.nan, depending on desired behavior for no variance
         except Exception as e:
             p_values.append(np.nan)
-            # Log the error for debugging
             import logging
             logging.error(f"Error during Friedman test for row {index}: {e}")
 
-    return pd.DataFrame({'p_value': p_values}, index=data.index)
+        # Calculate log2FC (e.g., last group vs first group median)
+        median_first_group = np.median(friedman_input_groups[0])
+        median_last_group = np.median(friedman_input_groups[-1])
 
+        if is_log_transformed:
+            log2fc = median_last_group - median_first_group
+        else:
+            log2fc = np.log2(median_last_group + epsilon) - np.log2(median_first_group + epsilon)
+        log2fc_values.append(log2fc)
+
+    return pd.DataFrame({'p_value': p_values, 'log2FC': log2fc_values}, index=data.index)
+
+def run_anova_rm(
+    data: pd.DataFrame,
+    paired_map: List[List[str]],
+    is_log_transformed: bool = False
+) -> pd.DataFrame:
+    """
+    Performs Repeated Measures ANOVA row by row for paired multi-group data.
+    The paired_map defines the mapping of samples for each subject across groups.
+    """
+    p_values = []
+    eta_squared_values = [] # Partial eta-squared for RM ANOVA
+    epsilon = 1 # For log2FC calculation (though not directly used for ANOVA RM output)
+
+    if not paired_map:
+        raise ValueError("Repeated Measures ANOVA requires a non-empty 'paired_map'.")
+
+    num_groups = len(paired_map[0])
+    if num_groups < 2: # RM ANOVA can be used for 2 or more groups
+        raise ValueError("Repeated Measures ANOVA requires at least 2 related groups.")
+
+    # Extract group names from the first entry of paired_map
+    group_sample_names_ordered = [paired_map[0][i] for i in range(num_groups)]
+
+    for index, row in data.iterrows():
+        long_data_for_feature = []
+        
+        # Collect data for each subject across all groups and transform to long format
+        for subject_idx, subject_samples in enumerate(paired_map):
+            for group_col_idx, sample_name in enumerate(subject_samples):
+                if sample_name in row and pd.notna(row[sample_name]):
+                    long_data_for_feature.append({
+                        'value': row[sample_name],
+                        'subject_id': f'S_{subject_idx}', # Unique ID for each subject
+                        'group': f'G_{group_col_idx}' # Group identifier
+                    })
+        
+        if not long_data_for_feature:
+            p_values.append(np.nan)
+            eta_squared_values.append(np.nan)
+            continue
+
+        df_long = pd.DataFrame(long_data_for_feature)
+
+        # Ensure there's enough data for the model
+        if len(df_long['subject_id'].unique()) < 1 or len(df_long['group'].unique()) < 2:
+            p_values.append(np.nan)
+            eta_squared_values.append(np.nan)
+            continue
+
+        try:
+            # Fit the Repeated Measures ANOVA model using statsmodels
+            # Formula: value ~ C(group) + C(subject_id)
+            # C(group) is the fixed effect we are interested in
+            # C(subject_id) accounts for the within-subject variability
+            model = smf.ols('value ~ C(group)', data=df_long).fit()
+            # For repeated measures, we need to account for the subject factor
+            # A more appropriate model for RM ANOVA is often Mixed Linear Model or using AnovaRM
+            # However, for simplicity and common use cases, a basic OLS with subject as a fixed effect
+            # can approximate, or we can use a more direct RM ANOVA implementation if available.
+            # For now, let's use a simple OLS and extract the group p-value.
+            # A proper RM ANOVA would involve `statsmodels.stats.anova.AnovaRM` or `mixedlm`.
+            # Let's use `AnovaRM` for a more correct approach.
+
+            # Ensure data is balanced for AnovaRM (same number of observations per subject per group)
+            # This is implicitly handled by how long_data_for_feature is constructed from paired_map
+            
+            # Check for sufficient data points per subject per group
+            counts = df_long.groupby(['subject_id', 'group']).size()
+            if not all(c > 0 for c in counts): # Ensure no empty cells after grouping
+                p_values.append(np.nan)
+                eta_squared_values.append(np.nan)
+                continue
+
+            aovrm = AnovaRM(data=df_long, depvar='value', subject='subject_id', within=['group'])
+            res = aovrm.fit()
+            
+            # Extract p-value for the 'group' effect
+            p_val = res.anova_table.loc['group', 'Pr > F']
+            p_values.append(p_val)
+
+            # Calculate partial eta-squared for the 'group' effect
+            # This requires SS_effect / (SS_effect + SS_error)
+            # From the AnovaRM results, we can get F-value, df, MS, etc.
+            # SS_group = MS_group * df_group
+            # SS_error = MS_error * df_error
+            # Partial Eta-squared = SS_group / (SS_group + SS_error)
+            
+            ss_group = res.anova_table.loc['group', 'sum_sq']
+            ss_error = res.anova_table.loc['Residual', 'sum_sq']
+            
+            if (ss_group + ss_error) > 0:
+                partial_eta_squared = ss_group / (ss_group + ss_error)
+            else:
+                partial_eta_squared = np.nan
+            eta_squared_values.append(partial_eta_squared)
+
+        except ValueError as e:
+            # This can happen if there's not enough variance or data for the model
+            p_values.append(np.nan)
+            eta_squared_values.append(np.nan)
+            import logging
+            logging.warning(f"ValueError during AnovaRM for row {index}: {e}")
+        except Exception as e:
+            p_values.append(np.nan)
+            eta_squared_values.append(np.nan)
+            import logging
+            logging.error(f"Error during AnovaRM for row {index}: {e}")
+
+    return pd.DataFrame({'p_value': p_values, 'eta_squared': eta_squared_values}, index=data.index)
 
 def run_permanova(
     data: pd.DataFrame, 
@@ -408,22 +580,33 @@ def apply_multiple_test_correction(
     rejected_series = pd.Series(rejected, index=finite_p_values.index).reindex(p_values.index, fill_value=False) # Fill NaNs with False
     return p_adj_series.reindex(p_values.index), rejected_series
 
-def check_normality(data: pd.Series) -> float:
+def check_normality(data: pd.Series) -> Tuple[str, float]:
     """
-    Performs Shapiro-Wilk test for normality.
-    Returns the p-value of the test.
+    Performs an appropriate normality test based on sample size.
+    - Shapiro-Wilk for N <= 5000
+    - Lilliefors (Kolmogorov-Smirnov) for N > 5000
+    Returns the test name and its p-value.
     """
-    # Drop NaNs and ensure at least 3 data points for Shapiro-Wilk
     clean_data = data.dropna()
-    if len(clean_data) < 3:
-        return np.nan # Not enough data to perform test
-    
+    n_samples = len(clean_data)
+
+    if n_samples < 3:
+        return "N/A", np.nan
+
     try:
-        stat, p_value = shapiro(clean_data)
-        return p_value
+        if n_samples <= 5000:
+            # Shapiro-Wilk is generally more powerful for smaller samples
+            stat, p_value = shapiro(clean_data)
+            return "Shapiro-Wilk", p_value
+        else:
+            # For larger samples where parameters are estimated, Lilliefors test is appropriate.
+            stat, p_value = lilliefors(clean_data, dist='norm')
+            return "Lilliefors (K-S)", p_value
     except Exception as e:
-        # Handle cases where shapiro test might fail (e.g., all values identical)
-        return np.nan
+        # Handle cases where tests might fail (e.g., all values identical)
+        import logging
+        logging.warning(f"Normality test failed: {e}")
+        return "Error", np.nan
 
 def run_wilcoxon_paired(
     data: pd.DataFrame, 

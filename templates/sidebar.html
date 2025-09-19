@@ -1,0 +1,272 @@
+<!-- Added responsive left sidebar -->
+<div class="sidebar-container" id="sidebar">
+    <div class="sidebar-content">
+        <div class="sidebar-section">
+            <div class="card">
+                <div class="card-header js-collapse-toggle" data-bs-target="#dataPreprocessing" aria-expanded="false">
+                    <i class="fas fa-cogs me-2"></i>Data Preprocessing
+                    <i class="fas fa-chevron-down float-end"></i>
+                </div>
+                <div class="collapse" id="dataPreprocessing">
+                    <div class="card-body p-0">
+                        
+                        <!-- Thresholding Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#thresholding" aria-expanded="false">
+                                <i class="fas fa-sliders-h me-2"></i>Thresholding
+                            </div>
+                            <div class="collapse" id="thresholding">
+                                <div class="card-body">
+                                    <p class="mb-3">Set the percentage threshold for non-null values per row.</p>
+                                    <div class="threshold-controls">
+                                        <label for="thresholdSlider">Threshold: <span id="thresholdValue">80</span>%</label>
+                                        <input type="range" class="form-range" id="thresholdSlider" min="0" max="100" value="80" step="10">
+                                    </div>
+                                    <div id="thresholdProgress" style="display: none;">
+                                        <div class="progress">
+                                            <div class="progress-bar" role="progressbar" style="width: 100%"></div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-primary" id="applyThresholdBtn">
+                                        <i class="fas fa-play me-2"></i>Apply Thresholding
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Data Cleaning Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#dataCleaning" aria-expanded="false">
+                                <i class="fas fa-broom me-2"></i>Data Cleaning
+                            </div>
+                            <div class="collapse" id="dataCleaning">
+                                <div class="card-body">
+                                    <p class="mb-3">Use this utility to handle specific data cleaning tasks.</p>
+                                    <button type="button" class="btn btn-outline-primary" id="replaceZerosBtn">
+                                        <i class="fas fa-exchange-alt me-2"></i>Replace All Zeros with NaN
+                                    </button>
+                                    <small class="text-muted d-block mt-2">This is useful if zeros in your data represent missing values and you need to mark them for imputation.</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Imputation Methods Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#imputation" aria-expanded="false">
+                                <i class="fas fa-fill-drip me-2"></i>Imputation Methods
+                            </div>
+                            <div class="collapse" id="imputation">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="n_imputation" value="n_imputation">
+                                        <label class="form-check-label" for="n_imputation">N Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="half_minimum" value="half_minimum">
+                                        <label class="form-check-label" for="half_minimum">Half Minimum Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="mean" value="mean">
+                                        <label class="form-check-label" for="mean">Mean Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="median" value="median">
+                                        <label class="form-check-label" for="median">Median Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="miss_forest" value="miss_forest">
+                                        <label class="form-check-label" for="miss_forest">Miss Forest Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="svd" value="svd">
+                                        <label class="form-check-label" for="svd">SVD Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="knn" value="knn">
+                                        <label class="form-check-label" for="knn">KNN Imputation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="mice_bayesian" value="mice_bayesian">
+                                        <label class="form-check-label" for="mice_bayesian">MICE (Bayesian Ridge)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="imputationMethod" id="mice_linear" value="mice_linear">
+                                        <label class="form-check-label" for="mice_linear">MICE (Linear Regression)</label>
+                                    </div>
+                                    <button type="button" class="btn btn-primary" id="sendImputationBtn">
+                                        <i class="fas fa-paper-plane me-2"></i>Send
+                                    </button>
+                                    <div class="alert alert-info" id="imputationDescription" style="display: none;">
+                                        <small id="imputationDescriptionText"></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Normalization Methods Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#normalization" aria-expanded="false">
+                                <i class="fas fa-balance-scale me-2"></i>Normalization Methods
+                            </div>
+                            <div class="collapse" id="normalization">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="normalizationMethod" id="tic" value="tic">
+                                        <label class="form-check-label" for="tic">Total Ion Current (TIC)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="normalizationMethod" id="mtic" value="mtic">
+                                        <label class="form-check-label" for="mtic">Median TIC Normalization</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="normalizationMethod" id="median_norm" value="median">
+                                        <label class="form-check-label" for="median_norm">Median Normalization</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="normalizationMethod" id="quantile" value="quantile">
+                                        <label class="form-check-label" for="quantile">Quantile Normalization</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="normalizationMethod" id="pqn" value="pqn">
+                                        <label class="form-check-label" for="pqn">Probabilistic Quotient Normalization (PQN)</label>
+                                    </div>
+                                    <button type="button" class="btn btn-primary" id="sendNormalizationBtn">
+                                        <i class="fas fa-paper-plane me-2"></i>Send
+                                    </button>
+                                    <div class="alert alert-info" id="normalizationDescription" style="display: none;">
+                                        <small id="normalizationDescriptionText"></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Transformation Methods Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#transformation" aria-expanded="false">
+                                <i class="fas fa-random me-2"></i>Transformation Methods
+                            </div>
+                            <div class="collapse" id="transformation">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="log2" value="log2">
+                                        <label class="form-check-label" for="log2">Log2 Transformation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="log10" value="log10">
+                                        <label class="form-check-label" for="log10">Log10 Transformation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="sqrt" value="sqrt">
+                                        <label class="form-check-label" for="sqrt">Square Root Transformation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="cube_root" value="cube_root">
+                                        <label class="form-check-label" for="cube_root">Cube Root Transformation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="arcsinh" value="arcsinh">
+                                        <label class="form-check-label" for="arcsinh">Arcsinh Transformation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="glog" value="glog">
+                                        <label class="form-check-label" for="glog">Generalized Log (glog) Transformation</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="transformationMethod" id="yeo_johnson" value="yeo_johnson">
+                                        <label class="form-check-label" for="yeo_johnson">Yeo-Johnson Transformation</label>
+                                    </div>
+                                    <button type="button" class="btn btn-primary" id="sendTransformationBtn">
+                                        <i class="fas fa-paper-plane me-2"></i>Send
+                                    </button>
+                                    <div class="alert alert-info" id="transformationDescription" style="display: none;">
+                                        <small id="transformationDescriptionText"></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scaling Methods Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#scaling" aria-expanded="false">
+                                <i class="fas fa-expand-arrows-alt me-2"></i>Scaling Methods
+                            </div>
+                            <div class="collapse" id="scaling">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="scalingMethod" id="standard" value="standard">
+                                        <label class="form-check-label" for="standard">Standard Scaling (Z-score)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="scalingMethod" id="minmax" value="minmax">
+                                        <label class="form-check-label" for="minmax">Min-Max Scaling</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="scalingMethod" id="pareto" value="pareto">
+                                        <label class="form-check-label" for="pareto">Pareto Scaling</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="scalingMethod" id="range" value="range">
+                                        <label class="form-check-label" for="range">Range Scaling</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="scalingMethod" id="robust" value="robust">
+                                        <label class="form-check-label" for="robust">Robust Scaling</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="scalingMethod" id="vast" value="vast">
+                                        <label class="form-check-label" for="vast">VAST Scaling</label>
+                                    </div>
+                                    <button type="button" class="btn btn-primary" id="sendScalingBtn">
+                                        <i class="fas fa-paper-plane me-2"></i>Send
+                                    </button>
+                                    <div class="alert alert-info" id="scalingDescription" style="display: none;">
+                                        <small id="scalingDescriptionText"></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar-section">
+            <div class="card">
+                <div class="card-header js-collapse-toggle" data-bs-target="#dataInformation" aria-expanded="false">
+                    <i class="fas fa-info-circle me-2"></i>Data Information
+                    <i class="fas fa-chevron-down float-end"></i>
+                </div>
+                <div class="collapse" id="dataInformation">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Original Sample Data:</h6>
+                                <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Current Processed Data:</h6>
+                                <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
+                            </div>
+                            <button type="button" class="btn btn-secondary w-100 mt-2 btn-enhanced pulse-on-hover" onclick="resetData()">
+                                <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
+                            </button>
+                        </div>
+                        <div class="mt-4">
+                            <h6>Processing Steps:</h6>
+                            <ul id="processingSteps" class="list-group list-group-flush">
+                                {% for step in processing_steps %}
+                                    <li class="list-group-item"><i class="fas {{ step.icon }} {{ step.color }} me-2"></i>{{ step.message }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toggle button positioned outside sidebar container -->
+<button type="button" class="sidebar-toggle" id="sidebarToggle">
+    <i class="fas fa-chevron-right" id="toggleIcon"></i>
+</button>

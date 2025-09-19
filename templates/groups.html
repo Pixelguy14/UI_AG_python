@@ -15,8 +15,8 @@
                 </div>
                 <div class="card-body">
                     <!-- Group Definition Section -->
-                    <div class="card mb-4">
-                        <div class="card-header bg-light">
+                    <div class="mb-4">
+                        <div class="card-header">
                             <h5 class="mb-0">
                                 <i class="fas fa-users me-2"></i>
                                 Define Experimental Groups
@@ -277,14 +277,14 @@
             };
 
             $.ajax({
-                url: '{{ url_for("analysis.update_groups") }}',
+                url: '{{ url_for("core.update_groups") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify(data),
                 success: function(response) {
                     if (response.success) {
                         window.showToast(response.message, 'success');
-                        setTimeout(() => window.location.reload(), 1500);
+                        setTimeout(() => window.location.reload(), 50);
                     } else {
                         window.showToast('Error: ' + response.message, 'danger');
                     }
@@ -301,7 +301,7 @@
             }
 
             $.ajax({
-                url: '{{ url_for("api.apply_regex_grouping") }}',
+                url: '{{ url_for("core.apply_regex_grouping") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({

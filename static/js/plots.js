@@ -12,7 +12,7 @@ function fetchAndRenderClustergram() {
     const yAxisTitle = yAxisLabelSelect.options[yAxisLabelSelect.selectedIndex].text;
     const colorPalette = document.getElementById('colorPalette').value;
 
-    fetch('/api/clustergram_data', {
+    fetch('/api/plots/clustergram_data', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

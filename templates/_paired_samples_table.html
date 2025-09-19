@@ -1,0 +1,127 @@
+<div id="pairingForm">
+    <p class="text-muted small">Define paired sets by selecting corresponding samples from each group. The first selected group ({{ group_names[selected_groups[0]] }}) serves as the base for participants.</p>
+    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+        <table class="table table-bordered table-sm" id="pairedSamplesTable">
+            <thead>
+                <tr>
+                    <th>Participant Sample ({{ group_names[selected_groups[0]] }})</th>
+                    {% for group_id in selected_groups[1:] %}
+                    <th>{{ group_names[group_id] }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for base_sample in base_group_samples %}
+                <tr>
+                    <td>{{ base_sample }}</td>
+                    
+                    {# Find the correct row for this base_sample once #}
+                    {% set correct_row = namespace(data=None) %}
+                    {% if existing_paired_map %}
+                        {% for row in existing_paired_map %}
+                            {% if row[0] == base_sample %}
+                                {% set correct_row.data = row %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+
+                    {% for group_id in selected_groups[1:] %}
+                    <td>
+                        <select class="form-select form-select-sm paired-sample-select" data-group-id="{{ group_id }}">
+                            <option value="">Select Sample</option>
+                            {% set samples_in_group = [] %}
+                            {% for sample_name, info in group_vector.items() %}
+                                {% if group_id|int in info.groups %}
+                                    {% do samples_in_group.append(sample_name) %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {# Get the specific selection for this column using the correct loop index #}
+                            {% set current_selection = '' %}
+                            {% if correct_row.data and loop.index < correct_row.data|length %}
+                                {% set current_selection = correct_row.data[loop.index] %}
+                            {% endif %}
+
+                            {% for sample in samples_in_group %}
+                            <option value="{{ sample }}" {% if sample == current_selection %}selected{% endif %}>{{ sample }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="savePairsBtn" class="btn btn-primary">Save Pairs</button>
+    </div>
+</div>
+
+<script>
+    // This script will run after the content is loaded
+    (function() {
+        const groupVector = {{ group_vector|tojson }};
+        
+        // Function to update all dropdowns to disable already selected samples
+        function updateAllDropdowns() {
+            const selectedSamples = new Set();
+            $('#pairedSamplesTable .paired-sample-select').each(function() {
+                const val = $(this).val();
+                if (val) selectedSamples.add(val);
+            });
+
+            $('#pairedSamplesTable .paired-sample-select').each(function() {
+                const currentVal = $(this).val();
+                $(this).find('option').each(function() {
+                    const optionVal = $(this).val();
+                    if (optionVal && optionVal !== currentVal && selectedSamples.has(optionVal)) {
+                        $(this).prop('disabled', true);
+                    } else {
+                        $(this).prop('disabled', false);
+                    }
+                });
+            });
+        }
+
+        // Attach change listener to update dropdowns for uniqueness
+        $('#pairedSamplesTable').on('change', '.paired-sample-select', updateAllDropdowns);
+
+        // Initial update to disable already selected samples if any
+        setTimeout(updateAllDropdowns, 50);
+        
+        // Handle save button click
+        $('#savePairsBtn').on('click', function() {
+            const paired_map = [];
+            
+            document.querySelectorAll('#pairedSamplesTable tbody tr').forEach(tr => {
+                const row = [tr.cells[0].innerText.trim()];
+                tr.querySelectorAll('select').forEach(select => {
+                    row.push(select.value);
+                });
+                paired_map.push(row);
+            });
+            
+            // Submit via AJAX
+            $.ajax({
+                url: '/api/save_pairing_data',
+                method: 'POST',
+                data: {
+                    paired_map: JSON.stringify(paired_map),
+                    groups: JSON.stringify({{ selected_groups|tojson }})
+                },
+                success: function() {
+                    window.showToast('Pairing data saved successfully!', 'success');
+                    const modalEl = document.getElementById('pairingModal');
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    modalInstance.hide();
+                },
+                error: function(xhr) {
+                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.error : 'Failed to save pairing data.';
+                    window.showToast(errorMsg, 'danger');
+                }
+            });
+        });
+    })();
+</script>
