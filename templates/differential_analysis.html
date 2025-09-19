@@ -208,9 +208,9 @@
                             <i class="fas fa-download me-2"></i>Export Data
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='csv', context='differential_analysis_results') }}', 'differential_analysis_results.csv')">Export as CSV</a></li>
-                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='tsv', context='differential_analysis_results') }}', 'differential_analysis_results.tsv')">Export as TSV</a></li>
-                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('core.export_dataframe', format='excel', context='differential_analysis_results') }}', 'differential_analysis_results.xlsx')">Export as Excel</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('dataframes.export_dataframe', format='csv', context='differential_analysis_results') }}', 'differential_analysis_results.csv')">Export as CSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('dataframes.export_dataframe', format='tsv', context='differential_analysis_results') }}', 'differential_analysis_results.tsv')">Export as TSV</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadFile('{{ url_for('dataframes.export_dataframe', format='excel', context='differential_analysis_results') }}', 'differential_analysis_results.xlsx')">Export as Excel</a></li>
                         </ul>
                     </div>
                 </div>
@@ -313,7 +313,7 @@
                 normalityCard.show();
 
                 $.ajax({
-                    url: '{{ url_for("api.run_normality_check") }}',
+                    url: '{{ url_for("differential_analysis.run_normality_check") }}',
                     method: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify({ groups: selectedGroups }),
@@ -451,7 +451,7 @@
                 resultsContainer.hide();
 
                 $.ajax({
-                    url: '{{ url_for("api.run_permanova_route") }}',
+                    url: '{{ url_for("differential_analysis.run_permanova_route") }}',
                     method: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify(payload),
@@ -504,7 +504,7 @@
                 $('#resultsContainer').html('<p class="text-muted">Running analysis...</p>');
 
                 $.ajax({
-                    url: '{{ url_for("api.run_differential_analysis") }}',
+                    url: '{{ url_for("differential_analysis.run_differential_analysis") }}',
                     method: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify(payload),

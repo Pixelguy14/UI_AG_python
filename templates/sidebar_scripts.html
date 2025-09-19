@@ -1,0 +1,18 @@
+<script>
+    window.APP_URLS = {
+        reset_sample_step: '{{ url_for("preprocessing.reset_sample_step") }}',
+        threshold: '{{ url_for("preprocessing.threshold") }}',
+        replace_zeros: '{{ url_for("preprocessing.replace_zeros") }}',
+        apply_imputation: '{{ url_for("preprocessing.apply_imputation") }}',
+        apply_normalization: '{{ url_for("preprocessing.apply_normalization") }}',
+        apply_transformation: '{{ url_for("preprocessing.apply_transformation") }}',
+        apply_scaling: '{{ url_for("preprocessing.apply_scaling") }}'
+    };
+</script>
+<script src="{{ url_for('static', filename='js/sidebar/data_info.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/thresholding.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/cleaning.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/imputation.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/normalization.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/transformation.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/scaling.js') }}"></script>

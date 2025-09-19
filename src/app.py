@@ -8,7 +8,8 @@ from flask import Flask, session, g, current_app
 from flask_session import Session # type: ignore
 from config import Config
 # Import and register blueprints
-from .routes import core, processing, analysis, api # type: ignore
+from .routes import core, analysis # type: ignore
+from .routes.api import dataframes_bp, differential_analysis_bp, plots_bp, preprocessing_bp # type: ignore
 
 # Global variable for last cleanup time
 last_cleanup_time = 0
@@ -71,15 +72,26 @@ def create_app():
     # Initialize extensions
     Session(app)
 
+    @app.context_processor
+    def inject_sidebar_data():
+        """Injects sidebar data into the template context."""
+        return {
+            'original_shape': session.get('original_shape', (0, 0)),
+            'current_shape': session.get('current_shape', (0, 0)),
+            'processing_steps': session.get('processing_steps', [])
+        }
+
     # Ensure instance folders exist
     with app.app_context():
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 
     app.register_blueprint(core.core_bp)
-    app.register_blueprint(processing.processing_bp)
     app.register_blueprint(analysis.analysis_bp)
-    app.register_blueprint(api.api_bp, url_prefix='/api')
+    app.register_blueprint(preprocessing_bp, url_prefix='/api/preprocessing')
+    app.register_blueprint(dataframes_bp, url_prefix='/api/dataframes')
+    app.register_blueprint(plots_bp, url_prefix='/api/plots')
+    app.register_blueprint(differential_analysis_bp, url_prefix='/api/differential_analysis')
 
     # This decorator will apply to all requests for the app
     @app.before_request

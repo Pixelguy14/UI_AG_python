@@ -342,11 +342,12 @@
                     if (response.success) {
                         window.showToast('Assignments and groups saved successfully!', 'success');
                         setTimeout(() => {
-                            htmx.ajax('GET', '/summary', {
+                            /*htmx.ajax('GET', '/summary', {
                                 target: 'body',
                                 swap: 'outerHTML',
                                 pushUrl: true
-                            });
+                            });*/
+                            window.location.href = '/summary';
                         }, 50);
                     } else {
                         window.showToast('Error saving assignments: ' + response.message, 'danger');

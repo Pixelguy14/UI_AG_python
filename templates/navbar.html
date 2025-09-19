@@ -1,4 +1,4 @@
-    <!-- Navigation -->
+<!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark" style="margin-bottom:20px">
         <div class="container-fluid">
             <a class="navbar-brand pulse-on-hover" href="{{ url_for('core.index') }}">
@@ -17,8 +17,8 @@
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="dataImportDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('core.upload_file') }}"><i class="fas fa-upload me-1"></i>Upload File</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('analysis.metadata') }}"><i class="fas fa-tags me-1"></i>Define Metadata</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('analysis.view_groups') }}"><i class="fas fa-users me-1"></i>View Groups</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.metadata') }}"><i class="fas fa-tags me-1"></i>Define Metadata</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('core.view_groups') }}"><i class="fas fa-users me-1"></i>View Groups</a></li>
                             <li><a class="dropdown-item" href="#"><i class="fas fa-chart-bar me-1"></i>Outlier Detection</a></li>
                         </ul>
                     </li>
@@ -32,11 +32,11 @@
                             <i class="fas fa-tasks me-1"></i>Data Preprocessing
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="preprocessingDropdown">
-                            <li><a class="dropdown-item" href="{{ url_for('processing.imputation') }}"><i class="fas fa-tools me-1"></i>Thresholding & Imputation</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('preprocessing.imputation') }}"><i class="fas fa-tools me-1"></i>Thresholding & Imputation</a></li>
                             <li><a class="dropdown-item" href="#">Filter Detection Frequency</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('processing.normalization') }}">Normalization</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('processing.transformation') }}">Log Transformation</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('processing.scaling') }}">Scaling</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('preprocessing.normalization') }}">Normalization</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('preprocessing.transformation') }}">Log Transformation</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('preprocessing.scaling') }}">Scaling</a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">
@@ -44,9 +44,9 @@
                             <i class="fas fa-vials me-1"></i>Analysis of Dataframe
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="analysisDropdown">
-                            <li><a class="dropdown-item" href="{{ url_for('core.dataframe_view') }}"><i class="fas fa-table me-1"></i>Original Dataframe</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('analysis.analysis') }}"><i class="fas fa-microscope me-1"></i>Sample Dataframe</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('analysis.comparison') }}"><i class="fas fa-balance-scale me-1"></i>Comparison</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('dataframes.dataframe_view') }}"><i class="fas fa-table me-1"></i>Original Dataframe</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('dataframes.analysis') }}"><i class="fas fa-microscope me-1"></i>Sample Dataframe</a></li>
+                            <li><a class="dropdown-item" href="#"><i class="fas fa-balance-scale me-1"></i>Comparison</a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">

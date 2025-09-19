@@ -1,20 +1,17 @@
-from flask import Blueprint, render_template, request, session, redirect, url_for, flash, Response, current_app
+from flask import Blueprint, render_template, request, session, redirect, url_for, flash, Response, current_app, jsonify
 from werkzeug.utils import secure_filename
 import os
-import io
 import pandas as pd
-import numpy as np
 import uuid
+import re
 
 # Import functions from other modules within the src package
 from ..functions.exploratory_data import loadFile, preprocessing_summary_perVariable, preprocessing_general_dataset_statistics # type: ignore
-from ..functions.plot_definitions import create_bar_plot, create_heatmap, create_heatmap_BW, create_distribution_plot, create_boxplot # type: ignore
+from ..functions.plot_definitions import create_bar_plot 
 from .. import data_manager
 
-# 1. Create a Blueprint object
 core_bp = Blueprint('core', __name__, template_folder='../../templates', static_folder='../../static')
 
-# 2. Change the route decorator from @app.route to @core_bp.route
 @core_bp.route('/')
 def index():
     return render_template('index.html')
@@ -36,10 +33,8 @@ def upload_file():
         if file:
             session.clear()
             
-            # Generate a new session ID
             session['session_id'] = str(uuid.uuid4())
 
-            # Create the session folder explicitly
             session_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], session['session_id'])
             os.makedirs(session_folder, exist_ok=True)
 
@@ -47,15 +42,13 @@ def upload_file():
             filepath = os.path.join(session_folder, filename)
             file.save(filepath)
             
-            # Initialize step arrays based on user input
             is_log_transformed_input = 'is_log_transformed' in request.form
             is_scaled_input = 'is_scaled' in request.form
 
             session['step_transformation'] = [1] if is_log_transformed_input else [0]
             session['step_scaling'] = [1] if is_scaled_input else [0]
-            session['step_normalization'] = [0] # Always 0 for initial upload
+            session['step_normalization'] = [0]
 
-            # Add initial processing step message
             initial_message = "Initial data upload."
             if is_log_transformed_input:
                 initial_message += " (Pre-transformed)"
@@ -64,13 +57,12 @@ def upload_file():
             session['processing_steps'] = [{'icon': 'fa-upload', 'color': 'text-info', 'message': initial_message}]
 
             try:
-                # Load the file
                 df = loadFile(filepath)
                 
                 if df is None or df.empty:
                     flash('Failed to load data or the file is empty.', 'warning')
                     return redirect(request.url)
-                # Handle orientation
+
                 if orientation == 'rows':
                     if df.shape[1] > 1:
                         df = df.set_index(df.columns[0]).T
@@ -89,6 +81,8 @@ def upload_file():
                     df.rename(columns=rename_map, inplace=True)
                 
                 data_manager.save_dataframe(df, 'df_main_path', 'df_main')
+                session['original_shape'] = df.shape
+                session['current_shape'] = df.shape
 
                 df_preview_html = df.head(10).to_html(classes='table table-striped table-hover table-sm', table_id='dataframe-preview-table', border=0)
                 
@@ -119,113 +113,25 @@ def upload_file():
 
 @core_bp.route('/summary')
 def summary():
-    df = data_manager.load_dataframe('df_main_path')
-    if df is None:
-        flash('Please upload a file first','warning')
-        return redirect(url_for('core.upload_file'))
-    
-    plots = {}
+    # Determine which dataframe to use for stats
     history_paths = session.get('df_history_paths', [])
-    
     if not history_paths:
-        # No history, use the main dataframe
-        df_sample = df
-        general_stats = preprocessing_general_dataset_statistics(df_sample)
-        plots['missing_heatmap'] = create_heatmap_BW(
-            df_sample.isnull().astype(int),
-            title='Missing Values Distribution'
-        )
+        df_sample = data_manager.load_dataframe('df_main_path')
     else:
-        # Load the latest dataframe from history
         df_sample = data_manager.load_dataframe(history_paths[-1])
-        if df_sample is None:
-            flash('Could not load the latest data. Please try uploading the file again.', 'danger')
-            del df
-            return redirect(url_for('core.upload_file'))
 
-        general_stats = preprocessing_general_dataset_statistics(df_sample)
-        numeric_df = df_sample.select_dtypes(include=[np.number])
-        
-        if not numeric_df.empty and numeric_df.shape[1] > 1:
-            corr_matrix = numeric_df.corr()
-            corr_matrix = corr_matrix.fillna(0)
-            plots['correlation'] = create_heatmap(
-                corr_matrix,
-                title='Correlation Matrix'
-            )
-        
-        plots['missing_heatmap'] = create_heatmap_BW(
-            df_sample,
-            title='Missing Values Distribution',
-            imputed=session.get('imputation_performed', False),
-            null_mask=session.get('imputed_mask')
-        )
-        
-        if not numeric_df.empty:
-            mean_values = numeric_df.mean()
-            plots['mean_intensity'] = create_bar_plot(
-                x=mean_values.index.tolist(),
-                y=mean_values.values.tolist(),
-                title=f'Mean Intensity ({len(mean_values)} samples)',
-                xaxis_title='Samples',
-                yaxis_title='Mean log2 intensity',
-                group_vector=session.get('group_vector'),
-                group_names=session.get('group_names')
-            )
-            plots['all_columns_density'] = create_distribution_plot(
-                numeric_df,
-                'Distribution of each group',
-                group_vector=session.get('group_vector'),
-                group_names=session.get('group_names')
-            )
+    if df_sample is None:
+        flash('Please upload a file first', 'warning')
+        return redirect(url_for('core.upload_file'))
 
-        numeric_df_for_boxplot = df_sample.select_dtypes(include=[np.number])
-        if not numeric_df_for_boxplot.empty:
-            plots['boxplot_distribution'] = create_boxplot(
-                numeric_df_for_boxplot,
-                title='Distribution of Sample Data',
-                group_vector=session.get('group_vector'),
-                group_names=session.get('group_names')
-            )
-
+    # Generate general stats and render the main page
+    general_stats = preprocessing_general_dataset_statistics(df_sample)
     general_stats_html = general_stats.to_html(classes='table table-striped')
-
-    # Clean up dataframes from memory
-    if 'df' in locals() and df is not None:
-        del df
-    if 'df_sample' in locals() and df_sample is not None:
-        del df_sample
-    if 'numeric_df' in locals() and numeric_df is not None:
-        del numeric_df
-    if 'corr_matrix' in locals() and corr_matrix is not None:
-        del corr_matrix
-    if 'mean_values' in locals() and mean_values is not None:
-        del mean_values
-    if 'numeric_df_for_boxplot' in locals() and numeric_df_for_boxplot is not None:
-        del numeric_df_for_boxplot
-    if 'general_stats' in locals() and general_stats is not None:
-        del general_stats
+    
+    del df_sample
 
     return render_template('summary.html', 
-                         general_stats=general_stats_html,
-                         plots=plots)
-
-@core_bp.route('/dataframe')
-def dataframe_view():
-    df = data_manager.load_dataframe('df_main_path')
-    if df is None:
-        flash('Please upload a file first','warning')
-        return redirect(url_for('core.upload_file'))
-    
-    df_html = df.to_html(classes='table table-striped table-hover', table_id='dataframe-table')
-    shape = df.shape
-    columns = df.columns.tolist()
-    del df
-    
-    return render_template('dataframe.html', 
-                         df_html=df_html,
-                         shape=shape,
-                         columns=columns)
+                         general_stats=general_stats_html)
 
 @core_bp.route('/reset')
 def reset():
@@ -238,82 +144,200 @@ def reset():
     flash('Page reset successfully','success')
     return redirect(url_for('core.upload_file'))
 
-@core_bp.route('/export_dataframe/<string:format>/<string:context>')
-def export_dataframe(format, context):
-    """
-    Exports a dataframe to the specified format (csv, tsv, excel).
-    The context determines which dataframe to export.
-    """
-    
-    def get_dataframe_by_context(context):
-        """Helper function to retrieve the correct dataframe based on context."""
-        history_paths = session.get('df_history_paths', [])
-        
-        if context == 'main':
-            return data_manager.load_dataframe('df_main_path')
-        elif context == 'analysis':
-            if history_paths:
-                return data_manager.load_dataframe(history_paths[-1])
-        elif context == 'differential_analysis_results':
-            return data_manager.load_dataframe('differential_analysis_results_path')
-        elif context == 'comparison_original':
-            if history_paths:
-                return data_manager.load_dataframe(history_paths[0])
-        elif context == 'comparison_processed':
-            if history_paths:
-                return data_manager.load_dataframe(history_paths[-1])
-        
-        return None
+def _create_group_vector(sample_cols, group_assignments, group_names):
+    group_vector = {}
+    for col in sample_cols:
+        str_col = str(col)
+        if str_col in group_assignments and group_assignments[str_col]:
+            group_info = {
+                'groups': group_assignments[str_col],
+                'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments[str_col]]
+            }
+        else:
+            group_info = {
+                'groups': [],
+                'group_names': []
+            }
+        group_vector[str_col] = group_info
+    return group_vector
 
-    df = get_dataframe_by_context(context)
-
+@core_bp.route('/metadata', methods=['GET', 'POST'])
+def metadata():
+    df = data_manager.load_dataframe('df_main_path')
     if df is None:
-        flash('No data available to export for the selected context.', 'warning')
-        return redirect(request.referrer or url_for('core.index'))
-
-    # Merge metadata if the context requires it
-    if context in ['analysis', 'comparison_original', 'comparison_processed']:
-        metadata_df = data_manager.load_dataframe('df_metadata_path')
-        if metadata_df is not None and not metadata_df.empty:
-            # Ensure indices are compatible for merging
-            if df.index.name != metadata_df.index.name:
-                 metadata_df.index = df.index
-            df = pd.concat([metadata_df, df], axis=1)
-
-    # Prepare the file for download
-    output = io.BytesIO()
+        flash('Please upload a file first', 'warning')
+        return redirect(url_for('core.upload_file'))
     
-    format_details = {
-        'csv': ('text/csv', f'{context}_data.csv'),
-        'tsv': ('text/tab-separated-values', f'{context}_data.tsv'),
-        'excel': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f'{context}_data.xlsx')
-    }
+    if request.method == 'POST':
+        data = request.json
+        assignments = data.get('assignments', {})
+        group_assignments = data.get('groupAssignments', {})
+        group_names = data.get('groupNames', {})
+        n_groups = data.get('nGroups', 0)
+        
+        metadata_cols = [col for col, assign in assignments.items() if assign == 'metadata']
+        sample_cols = [col for col, assign in assignments.items() if assign in ['sample', 'undefined']]
+        removed_cols = [col for col, assign in assignments.items() if assign == 'removed']
+        
+        df_metadata = df[metadata_cols].copy() if metadata_cols else pd.DataFrame()
+        df_sample = df[sample_cols].copy() if sample_cols else pd.DataFrame()
+        df_original = df.drop(columns=removed_cols).copy() if removed_cols else df.copy()
+        
+        data_manager.save_dataframe(df_metadata, 'df_metadata_path', 'df_metadata')
+        data_manager.save_dataframe(df_sample, 'df_history_0', 'df_history')
+        session['df_history_paths'] = ['df_history_0']
+        data_manager.save_dataframe(df_original, 'df_main_path', 'df_main')
 
-    if format not in format_details:
-        return "Invalid format", 400
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for preprocessing.'}]
+        session['imputation_performed'] = False
+        session['imputed_mask'] = None
+        
+        session['group_assignments'] = group_assignments
+        session['group_names'] = group_names
+        session['n_groups'] = n_groups
+        
+        group_vector = _create_group_vector(sample_cols, group_assignments, group_names)
+        session['group_vector'] = group_vector
 
-    mimetype, filename = format_details[format]
-
-    if format == 'csv':
-        df.to_csv(output, index=True)
-    elif format == 'tsv':
-        df.to_csv(output, sep='\t', index=True)
-    elif format == 'excel':
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=True)
-    
-    output.seek(0)
-
-    # Clean up
-    if 'df' in locals() and df is not None:
         del df
-    if 'metadata_df' in locals() and metadata_df is not None:
-        del metadata_df
+        del df_metadata
+        del df_sample
+        del df_original
+        
+        return jsonify({'success': True, 'message': 'Metadata assignments and groups saved successfully'})
+    
+    existing_metadata = []
+    existing_sample = []
+    
+    df_metadata = data_manager.load_dataframe('df_metadata_path')
+    if df_metadata is not None and not df_metadata.empty:
+        existing_metadata = df_metadata.columns.tolist()
+    
+    history_paths = session.get('df_history_paths', [])
+    if history_paths:
+        df_sample_initial = data_manager.load_dataframe(history_paths[0])
+        if df_sample_initial is not None and not df_sample_initial.empty:
+            existing_sample = df_sample_initial.columns.tolist()
+    
+    return render_template('metadata.html', 
+                         columns=df.columns.tolist(),
+                         existing_metadata=existing_metadata,
+                         existing_sample=existing_sample,
+                         group_regexes=session.get('group_regexes', {}))
 
-    return Response(
-        output.getvalue(),
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+@core_bp.route('/groups')
+def view_groups():
+    if not session.get('group_vector'):
+        flash('No group assignments found. Please define groups in metadata first.', 'warning')
+        return redirect(url_for('core.metadata'))
+    
+    group_vector = session['group_vector']
+    group_names = session.get('group_names', {})
+    n_groups = session.get('n_groups', 0)
+    
+    if 'processing_steps' not in session or not session['processing_steps']:
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for preprocessing.'}]
 
+    group_summary = {}
+    for group_id, group_name in group_names.items():
+        if group_id != '0':
+            count = 0
+            for col, info in group_vector.items():
+                if int(group_id) in info.get('groups', []):
+                    count += 1
+            group_summary[group_name] = count
+    
+    return render_template('groups.html',
+                         group_vector=group_vector,
+                         group_assignments=session.get('group_assignments', {}),
+                         group_names=group_names,
+                         n_groups=n_groups,
+                         group_summary=group_summary,
+                         group_regexes=session.get('group_regexes', {}))
 
+@core_bp.route('/update_groups', methods=['POST'])
+def update_groups():
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
+        return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
+
+    data = request.json
+    group_assignments = data.get('groupAssignments', {})
+    group_names = data.get('groupNames', {})
+    n_groups = data.get('nGroups', 0)
+    group_regexes = data.get('groupRegexes', {})
+
+    session['group_assignments'] = group_assignments
+    session['group_names'] = group_names
+    session['n_groups'] = n_groups
+    session['group_regexes'] = group_regexes
+
+    df_sample_initial = data_manager.load_dataframe(history_paths[0])
+    sample_cols = df_sample_initial.columns.tolist()
+    group_vector = _create_group_vector(sample_cols, group_assignments, group_names)
+    session['group_vector'] = group_vector
+    session.modified = True
+
+    return jsonify({'success': True, 'message': 'Group assignments updated successfully.'})
+
+@core_bp.route('/apply_regex_grouping', methods=['POST'])
+def apply_regex_grouping():
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
+        return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
+    df_sample = data_manager.load_dataframe(history_paths[-1])
+    if df_sample is None or df_sample.empty:
+        return jsonify({'success': False, 'message': 'No sample data available. Please upload a file and assign metadata first.'})
+
+    data = request.json
+    group_id = str(data.get('groupId'))
+    regex_pattern = data.get('regexPattern')
+
+    if not regex_pattern:
+        return jsonify({'success': False, 'message': 'Regex pattern cannot be empty.'})
+
+    try:
+        compiled_regex = re.compile(regex_pattern)
+    except re.error as e:
+        return jsonify({'success': False, 'message': f'Invalid regex pattern: {e}'})
+
+    df_sample_columns = df_sample.columns.tolist()
+    group_assignments = session.get('group_assignments', {})
+    group_names = session.get('group_names', {})
+    matched_columns_count = 0
+
+    for col in df_sample_columns:
+        if compiled_regex.match(col):
+            current_groups = group_assignments.get(col, [])
+            if int(group_id) not in current_groups:
+                current_groups.append(int(group_id))
+                group_assignments[col] = sorted(current_groups)
+                matched_columns_count += 1
+
+    session['group_assignments'] = group_assignments
+    session.get('group_regexes', {})[group_id] = regex_pattern
+
+    group_vector = {}
+    for col in df_sample_columns:
+        group_info = {
+            'groups': group_assignments.get(col, []),
+            'group_names': [group_names.get(str(gid), f'Group {gid}') for gid in group_assignments.get(col, [])]
+        }
+        group_vector[col] = group_info
+    
+    session['group_vector'] = group_vector
+    session.modified = True
+
+    return jsonify({
+        'success': True, 
+        'message': f'Assigned {matched_columns_count} columns to group {group_names.get(group_id, group_id)}.',
+        'groupAssignments': group_assignments,
+        'groupVector': group_vector
+    })
+
+@core_bp.route('/metadata_columns')
+def get_metadata_columns():
+    df_metadata = data_manager.load_dataframe('df_metadata_path')
+    if df_metadata is not None:
+        return jsonify({'columns': df_metadata.columns.tolist()})
+    return jsonify({'columns': []})

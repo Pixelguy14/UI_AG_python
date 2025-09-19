@@ -158,85 +158,20 @@
             };
         }
 
-        // Threshold Slider
-        const thresholdSlider = document.getElementById('thresholdSlider');
-        if (thresholdSlider) {
-            thresholdSlider.oninput = function() {
-                const thresholdValue = document.getElementById('thresholdValue');
-                if (thresholdValue) thresholdValue.textContent = this.value;
-            };
-        }
-        document.getElementById('applyThresholdBtn')?.addEventListener('click', () => {
-            const threshold = document.getElementById('thresholdSlider').value;
-            window.showToast(`Applying threshold of ${threshold}%`, 'info');
-        });
+        // Initialize sidebar components
+        initThresholding();
+        initCleaning();
+        initImputation();
+        initNormalization();
+        initTransformation();
+        initScaling();
 
-        // Replace Zeros Button
-        document.getElementById('replaceZerosBtn')?.addEventListener('click', () => {
-            window.showToast('Replacing all zeros with NaN values', 'info');
-        });
-
-        // Method Description for the radiobuttons
-        const methodDescriptions = {
-            'n_imputation': 'Replaces missing values with a small constant value.',
-            'half_minimum': 'Replaces missing values with half of the minimum observed value.',
-            'mean': 'Replaces missing values with the mean of the observed values.',
-            'median': 'Replaces missing values with the median of the observed values.',
-            'miss_forest': 'Uses random forest algorithm to predict missing values.',
-            'svd': 'Uses Singular Value Decomposition for imputation.',
-            'knn': 'Uses K-Nearest Neighbors to impute missing values.',
-            'mice_bayesian': 'Multiple Imputation by Chained Equations using Bayesian Ridge regression.',
-            'mice_linear': 'Multiple Imputation by Chained Equations using Linear Regression.',
-            'tic': 'Normalizes each sample by its total ion current.',
-            'mtic': 'Normalizes by the median total ion current across samples.',
-            'median': 'Normalizes each feature by its median value.',
-            'quantile': 'Transforms features to follow a uniform distribution.',
-            'pqn': 'Probabilistic quotient normalization for metabolomics data.',
-            'log2': 'Applies logarithm base 2 transformation to reduce skewness.',
-            'log10': 'Applies logarithm base 10 transformation to reduce skewness.',
-            'sqrt': 'Applies square root transformation to reduce skewness.',
-            'cube_root': 'Applies cube root transformation for moderate skewness.',
-            'arcsinh': 'Inverse hyperbolic sine transformation, handles zeros and negatives.',
-            'glog': 'Generalized logarithm transformation with parameter estimation.',
-            'yeo_johnson': 'Power transformation that handles positive and negative values.',
-            'standard': 'Standardizes features by removing mean and scaling to unit variance.',
-            'minmax': 'Scales features to a fixed range, typically [0,1].',
-            'pareto': 'Scales by square root of standard deviation, common in metabolomics.',
-            'range': 'Scales by the range (max - min) of the feature.',
-            'robust': 'Uses median and interquartile range, robust to outliers.',
-            'vast': 'Variable Stability scaling, accounts for coefficient of variation.'
-        };
-        document.querySelectorAll('input[type="radio"][name$="Method"]').forEach(radio => {
-            radio.onchange = function() {
-                const methodType = this.name.replace('Method', '');
-                const description = document.getElementById(`${methodType}Description`);
-                const descriptionText = document.getElementById(`${methodType}DescriptionText`);
-                if (description && descriptionText && methodDescriptions[this.value]) {
-                    descriptionText.textContent = methodDescriptions[this.value];
-                    description.style.display = 'block';
-                }
-            };
-        });
-
-        // Send Buttons
-        ['Imputation', 'Normalization', 'Transformation', 'Scaling'].forEach(method => {
-            const btn = document.getElementById(`send${method}Btn`);
-            if (btn) {
-                btn.onclick = function() {
-                    const selectedMethod = document.querySelector(`input[name="${method.toLowerCase()}Method"]:checked`);
-                    if (selectedMethod) {
-                        window.showToast(`Applying ${method}: ${selectedMethod.value}`, 'success');
-                    } else {
-                        window.showToast(`Please select a ${method.toLowerCase()} method`, 'warning');
-                    }
-                };
-            }
-        });
-      });
-    </script>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
+              });
+          </script>
+      
+          {% include 'sidebar_scripts.html' %}
+      
+          {% with messages = get_flashed_messages(with_categories=true) %}    {% if messages %}
         <script>
             (function() {
                 let messages = {{ messages|tojson }};

@@ -27,7 +27,7 @@
                                             <div class="progress-bar" role="progressbar" style="width: 100%"></div>
                                         </div>
                                     </div>
-                                    <button type="button" class="btn btn-primary" id="applyThresholdBtn" onclick="applyThreshold()">
+                                    <button type="button" class="btn btn-primary" id="applyThresholdBtn">
                                         <i class="fas fa-play me-2"></i>Apply Thresholding
                                     </button>
                                 </div>
@@ -226,6 +226,39 @@
                             </div>
                         </div>
 
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar-section">
+            <div class="card">
+                <div class="card-header js-collapse-toggle" data-bs-target="#dataInformation" aria-expanded="false">
+                    <i class="fas fa-info-circle me-2"></i>Data Information
+                    <i class="fas fa-chevron-down float-end"></i>
+                </div>
+                <div class="collapse" id="dataInformation">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Original Sample Data:</h6>
+                                <p class="text-muted">Shape: {{ original_shape[0] }} rows, {{ original_shape[1] }} columns</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Current Processed Data:</h6>
+                                <p class="text-muted">Shape: <span id="currentShape">{{ current_shape[0] }} rows, {{ current_shape[1] }} columns</span></p>
+                            </div>
+                            <button type="button" class="btn btn-secondary w-100 mt-2 btn-enhanced pulse-on-hover" onclick="resetData()">
+                                <i class="fas fa-undo me-2"></i>Reset to Previous Processing Step
+                            </button>
+                        </div>
+                        <div class="mt-4">
+                            <h6>Processing Steps:</h6>
+                            <ul id="processingSteps" class="list-group list-group-flush">
+                                {% for step in processing_steps %}
+                                    <li class="list-group-item"><i class="fas {{ step.icon }} {{ step.color }} me-2"></i>{{ step.message }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>

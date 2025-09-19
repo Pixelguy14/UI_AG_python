@@ -277,7 +277,7 @@
             };
 
             $.ajax({
-                url: '{{ url_for("analysis.update_groups") }}',
+                url: '{{ url_for("core.update_groups") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify(data),
@@ -301,7 +301,7 @@
             }
 
             $.ajax({
-                url: '{{ url_for("api.apply_regex_grouping") }}',
+                url: '{{ url_for("core.apply_regex_grouping") }}',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({

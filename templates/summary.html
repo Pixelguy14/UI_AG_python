@@ -27,8 +27,7 @@
         <!-- Plots -->
         <div class="col-lg-12">
             <div class="row">
-                <!-- Mean Intensity (if available) -->
-                {% if plots.mean_intensity %}
+                <!-- Mean Intensity -->
                 <div class="col-lg-6 mb-4">
                     <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
@@ -38,14 +37,14 @@
                             </button>
                         </div>
                         <div class="card-body">
-                            <div id="meanIntensityPlot"></div>
+                            <div id="meanIntensityPlot" class="plot-loading">
+                                <div class="skeleton" style="min-height: 400px; width: 100%;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                {% endif %}
                 
-                <!-- Correlation Matrix (if available) -->
-                {% if plots.correlation %}
+                <!-- Correlation Matrix -->
                 <div class="col-lg-6 mb-4">
                     <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
@@ -55,11 +54,12 @@
                             </button>
                         </div>
                         <div class="card-body">
-                            <div id="correlationPlot"></div>
+                            <div id="correlationPlot" class="plot-loading">
+                                <div class="skeleton" style="min-height: 400px; width: 100%;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                {% endif %}
                 
                 <!-- Missing Values Heatmap -->
                 <div class="col-lg-6 mb-4">
@@ -71,13 +71,14 @@
                             </button>
                         </div>
                         <div class="card-body">
-                            <div id="missingHeatmapPlot"></div>
+                            <div id="missingHeatmapPlot" class="plot-loading">
+                                <div class="skeleton" style="min-height: 400px; width: 100%;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
                 <!-- Distribution Plot -->
-                {% if plots.all_columns_density %}
                 <div class="col-lg-6 mb-4">
                     <div class="plot-container card animated-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
@@ -93,16 +94,17 @@
                             </div>
                         </div>
                         <div class="card-body">
-                            <div id="allColumnsDensityPlot"></div>
+                            <div id="allColumnsDensityPlot" class="plot-loading">
+                                <div class="skeleton" style="min-height: 400px; width: 100%;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
+    
     <!-- Boxplot Distribution -->
-    {% if plots.boxplot_distribution %}
     <div class="row mt-4">
         <div class="col-lg-12 mb-4">
             <div class="plot-container card animated-card">
@@ -111,15 +113,11 @@
                     <div>
                         <div class="btn-group btn-group-sm" role="group">
                             <button type="button" class="btn btn-light active btn-enhanced pulse-on-hover" id="boxplot-btn"
-                                    hx-get="{{ url_for('api.get_distribution_plot', plot_type='boxplot', context='after') }}"
-                                    hx-swap="none"
-                                    hx-on:htmx:after-request="handleDistributionPlotResponse(event, 'boxplot')">
+                                    onclick="loadDistributionPlot('boxplot')">
                                 BoxPlot
                             </button>
                             <button type="button" class="btn btn-light btn-enhanced pulse-on-hover" id="violinplot-btn"
-                                    hx-get="{{ url_for('api.get_distribution_plot', plot_type='violinplot', context='after') }}"
-                                    hx-swap="none"
-                                    hx-on:htmx:after-request="handleDistributionPlotResponse(event, 'violinplot')">
+                                    onclick="loadDistributionPlot('violinplot')">
                                 ViolinPlot
                             </button>
                         </div>
@@ -129,55 +127,84 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div id="boxplotDistributionPlot" style="min-height: 400px;"></div>
+                    <div id="boxplotDistributionPlot" class="plot-loading">
+                        <div class="skeleton" style="min-height: 400px; width: 100%;"></div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // This function must be in the global scope for hx-on to find it.
-    function handleDistributionPlotResponse(evt, plotType) {
+    // Function to load distribution plot
+    function loadDistributionPlot(plotType) {
         const plotDiv = document.getElementById('boxplotDistributionPlot');
+        const context = 'after'; // or determine context as needed
         
-        // Add a skeleton loader while waiting for the plot
-        if (plotDiv) {
-            plotDiv.innerHTML = '<div class="skeleton" style="min-height: 400px; width: 100%;"></div>';
-        }
-
-        if (evt.detail.successful) {
-            try {
-                const data = JSON.parse(evt.detail.xhr.responseText);
+        plotDiv.innerHTML = '<div class="skeleton" style="min-height: 400px; width: 100%;"></div>';
+        
+        fetch(`{{ url_for('plots.get_distribution_plot', plot_type='PLACEHOLDER', context='after') }}`.replace('PLACEHOLDER', plotType))
+            .then(response => response.json())
+            .then(data => {
                 if (data.error) {
                     plotDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
                     return;
                 }
                 const plotData = JSON.parse(data.plot);
-                // Use a slight delay to allow the skeleton to be visible and improve perceived performance
-                setTimeout(() => {
-                    Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
-                }, 50);
-            } catch (e) {
-                plotDiv.innerHTML = '<div class="alert alert-danger">Failed to parse plot data.</div>';
-                // console.error("Error parsing plot JSON:", e);
-                window.showToast('Error parsing JSON plot','danger')
-            }
-        } else {
-            plotDiv.innerHTML = '<div class="alert alert-danger">Error loading plot data.</div>';
-        }
+                Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
+                plotDiv.classList.remove('plot-loading'); // Remove loading class
+                
+                // Update button states
+                document.getElementById('boxplot-btn').classList.toggle('active', plotType === 'boxplot');
+                document.getElementById('violinplot-btn').classList.toggle('active', plotType === 'violinplot');
+            })
+            .catch(error => {
+                plotDiv.innerHTML = '<div class="alert alert-danger">Error loading plot data.</div>';
+                console.error("Error loading distribution plot:", error);
+            });
+    }
 
-        // Update button states using vanilla JS to avoid jQuery dependency here
-        document.getElementById('boxplot-btn').classList.toggle('active', plotType === 'boxplot');
-        document.getElementById('violinplot-btn').classList.toggle('active', plotType === 'violinplot');
+    // Function to load a plot via AJAX
+    function loadPlot(plotId, endpoint) {
+        const plotDiv = document.getElementById(plotId);
+        if (!plotDiv) return;
+        
+        fetch(endpoint)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    plotDiv.innerHTML = `<div class="alert alert-warning">${data.error}</div>`;
+                    return;
+                }
+                if (data.plot) {
+                    const plotData = JSON.parse(data.plot);
+                    Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
+                    plotDiv.classList.remove('plot-loading'); // Remove loading class
+                    
+                    // Add resize handler
+                    const handler = () => Plotly.Plots.resize(plotDiv);
+                    window.addEventListener('resize', handler);
+                    if (window.summaryResizeHandlers) {
+                        window.summaryResizeHandlers.push({ id: plotId, handler: handler });
+                    }
+                }
+            })
+            .catch(error => {
+                plotDiv.innerHTML = '<div class="alert alert-danger">Failed to load plot.</div>';
+                console.error(`Error loading plot ${plotId}:`, error);
+            });
     }
 
     (function() {
-        // Use an IIFE to scope this page's logic.
-        var summaryResizeHandlers = [];
+        window.summaryResizeHandlers = [];
 
         function init() {
             function loadScript(src, callback) {
@@ -192,36 +219,16 @@
             }
 
             function initPageScripts() {
-                summaryResizeHandlers = []; // Clear handlers on init
+                // Load all plots asynchronously
+                loadPlot('meanIntensityPlot', "{{ url_for('plots.mean_intensity') }}");
+                loadPlot('correlationPlot', "{{ url_for('plots.correlation_matrix') }}");
+                loadPlot('missingHeatmapPlot', "{{ url_for('plots.missing_heatmap') }}");
+                loadPlot('allColumnsDensityPlot', "{{ url_for('plots.all_columns_density') }}");
+                
+                // Load initial distribution plot
+                loadDistributionPlot('boxplot');
 
-                function createPlot(id, plotData) {
-                    const plotDiv = document.getElementById(id);
-                    if (plotDiv && plotData) {
-                        try {
-                            Plotly.newPlot(plotDiv, plotData.data, plotData.layout, { responsive: true });
-                            const handler = () => {
-                                if (document.body.contains(plotDiv)) {
-                                    Plotly.Plots.resize(plotDiv);
-                                }
-                            };
-                            window.addEventListener('resize', handler);
-                            summaryResizeHandlers.push({ id: id, handler: handler });
-                        } catch (e) {
-                            // console.error(`Error rendering plot ${id}:`, e);
-                            window.showToast(`Error rendering plot ${id}:`,'danger')
-                        }
-                    }
-                }
-
-                createPlot('allColumnsDensityPlot', {{ plots.all_columns_density|default('null')|safe }});
-                createPlot('meanIntensityPlot', {{ plots.mean_intensity|default('null')|safe }});
-                createPlot('correlationPlot', {{ plots.correlation|default('null')|safe }});
-                createPlot('missingHeatmapPlot', {{ plots.missing_heatmap|default('null')|safe }});
-                createPlot('boxplotDistributionPlot', {{ plots.boxplot_distribution|default('null')|safe }});
-
-                // Boxplot/violinplot buttons are now handled by HTMX and handleDistributionPlotResponse.
-                // The old jQuery click handlers have been removed.
-
+                // Set up distribution plot buttons
                 $('#dist-select-all').on('click', function() {
                     const plotDiv = document.getElementById('allColumnsDensityPlot');
                     if (plotDiv && plotDiv.data) {
@@ -254,29 +261,39 @@
                 'allColumnsDensityPlot', 
                 'boxplotDistributionPlot'
             ];
+            
             plotIds.forEach(id => {
                 const plotDiv = document.getElementById(id);
                 if (plotDiv) {
                     Plotly.purge(plotDiv);
+                    plotDiv.innerHTML = ''; // Explicitly clear inner HTML
                 }
             });
 
-            if (summaryResizeHandlers) {
-                summaryResizeHandlers.forEach(({ handler }) => {
+            if (window.summaryResizeHandlers) {
+                window.summaryResizeHandlers.forEach(({ handler }) => {
                     window.removeEventListener('resize', handler);
                 });
             }
-            summaryResizeHandlers = [];
-            // Remove only the handlers that were set in this script's IIFE
+            window.summaryResizeHandlers = [];
+            
             $('#dist-select-all').off('click');
             $('#dist-unselect-all').off('click');
         }
 
-        // Register the cleanup function
+        window.pageScriptRegistry = window.pageScriptRegistry || {};
         window.pageScriptRegistry.cleanup = cleanup;
+
+        // Add event listener to reload plots
+        document.body.addEventListener('plots-changed', function() {
+            cleanup();
+            init();
+        });
 
         // Self-initialize
         init();
     })();
 </script>
+
+
 {% endblock %}
