@@ -6,7 +6,8 @@
         apply_imputation: '{{ url_for("preprocessing.apply_imputation") }}',
         apply_normalization: '{{ url_for("preprocessing.apply_normalization") }}',
         apply_transformation: '{{ url_for("preprocessing.apply_transformation") }}',
-        apply_scaling: '{{ url_for("preprocessing.apply_scaling") }}'
+        apply_scaling: '{{ url_for("preprocessing.apply_scaling") }}',
+        apply_prediction: '{{ url_for("preprocessing.apply_prediction") }}',
     };
 </script>
 <script src="{{ url_for('static', filename='js/sidebar/data_info.js') }}"></script>
@@ -16,3 +17,4 @@
 <script src="{{ url_for('static', filename='js/sidebar/normalization.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar/transformation.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sidebar/scaling.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sidebar/prediction.js') }}"></script>

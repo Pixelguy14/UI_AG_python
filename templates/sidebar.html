@@ -226,8 +226,31 @@
                             </div>
                         </div>
 
-                    </div>
-                </div>
+                        <!-- Prediction Methods Section -->
+                        <div class="card">
+                            <div class="card-header js-collapse-toggle" data-bs-target="#prediction" aria-expanded="false">
+                                <i class="fas fa-brain me-2"></i>Prediction Methods
+                            </div>
+                            <div class="collapse" id="prediction">
+                                <div class="card-body">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="predictionMethod" id="random_forest" value="random_forest">
+                                        <label class="form-check-label" for="random_forest">Random Forest</label>
+                                    </div>
+                                    <div id="prediction-controls">
+                                        
+                                    </div>
+                                    <button type="button" class="btn btn-primary" id="sendPredictionBtn">
+                                        <i class="fas fa-play me-2"></i>Get Prediction
+                                    </button>
+                                    <div class="alert alert-info" id="predictionDescription" style="display: none;">
+                                        <small id="predictionDescriptionText"></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div> 
+                </div> 
             </div>
         </div>
         <div class="sidebar-section">

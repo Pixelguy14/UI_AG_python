@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, session, redirect, url_for, flash, jsonify
+from flask import Blueprint, current_app, render_template, request, session, redirect, url_for, flash, jsonify
 import numpy as np
 
 # Import processing functions
@@ -24,6 +24,9 @@ from ...functions.plot_definitions import ( # type: ignore
     create_violinplot, create_pca_plot
 )
 from ... import data_manager
+from ...functions.prediction_methods import ( # type: ignore
+    random_forest_classification
+)
 
 preprocessing_bp = Blueprint('preprocessing', __name__, url_prefix='/preprocessing')
 
@@ -564,6 +567,120 @@ def apply_scaling():
             })
         except Exception as e:
             return jsonify({'error': f'Scaling failed: {str(e)}'})
+        
+    # Prediction block
+@preprocessing_bp.route('/prediction', methods=['GET'])
+def prediction():
+    from flask import current_app
+    
+    history_paths = session.get('df_history_paths', [])
+    if not history_paths:
+        flash('Please define sample data first','warning')
+        return redirect(url_for('core.metadata'))
+    try:
+        df_current = None
+        for key in reversed(history_paths):
+            df_current = data_manager.load_dataframe(key)
+            if df_current is not None:
+                break
+        if df_current is None:
+            flash('There is no valid DataFrame available for prediction.', 'danger')
+            return redirect(url_for('core.metadata'))
+    except Exception as e:
+        current_app.logger.error(f"Error loading current dataframe: {e}")
+        flash('Error loading current data for prediction','danger')
+    
+    if 'processing_steps' not in session or not session['processing_steps']:
+        session['processing_steps'] = [{'icon': 'fa-check-circle', 'color': 'text-success', 'message': 'Sample data loaded, ready for preprocessing.'}]
+
+    #plots = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'), 'Scaling')
+    
+    # plots = random_forest_classification(df_prediction)
+    
+    plots = session.get('prediction_plots', {})
+
+    return render_template('prediction.html',
+                           current_shape=df_current.shape,
+                           processing_steps=session.get('processing_steps', []),
+                           plots=plots
+                          )
+    
+@preprocessing_bp.route('/apply_prediction', methods=['POST'])
+def apply_prediction():
+    with data_manager.processing_lock():
+        history_paths = session.get('df_history_paths', [])
+        if not history_paths:
+            return jsonify({'success': False, 'message': 'No sample data available'})
+
+        df_current = None
+        for key in reversed(history_paths):
+            df_candidate = data_manager.load_dataframe(key)
+            if 'Group' not in df_candidate.columns:
+                df_current = df_candidate
+                break
+        if df_current is None:
+            return jsonify({'success': False, 'message': 'No valid DataFrame available for prediction.'})
+
+        df_meta_thd = data_manager.load_dataframe('df_meta_thd_path')
+        if df_meta_thd is None or 'mz' not in df_meta_thd.columns:
+            return jsonify({'success': False, 'message': 'Metadata for mz values is missing or invalid.'})
+
+        if df_current.shape[0] != len(df_meta_thd['mz'].values):
+            return jsonify({'success': False, 'message': f'Length mismatch: Data has {df_current.shape[0]} rows, but metadata has {len(df_meta_thd["mz"].values)} mz values.'})
+
+        df_current_T = df_current.transpose()
+        df_current_T.columns = df_meta_thd['mz'].values
+        df_current_T.insert(0, 'Sample', df_current_T.index)
+        df_current_mz = df_current_T.reset_index(drop=True)
+
+        group_vector = session.get('group_vector')
+        groups = [group_vector[sample]['group_names'][0] for sample in df_current.columns]
+
+        df_prediction = df_current_mz.copy()
+        df_prediction['Group'] = groups
+
+        prediction_key = 'df_prediction'
+        data_manager.save_dataframe(df_prediction, prediction_key, 'df_prediction')
+        session['df_prediction_key'] = prediction_key
+
+        method = request.json.get('method')
+        params = request.json.get('params', {})
+        try:
+            prediction_methods = {
+                'random_forest': (random_forest_classification),
+            }
+            if method not in prediction_methods:
+                return jsonify({'success': False, 'message': 'Unknown prediction method'})
+            df_prediction = data_manager.load_dataframe(prediction_key)
+            plots = prediction_methods[method](df_prediction, params)
+            session['prediction_plots'] = plots
+
+            history_key = f'df_history_{len(history_paths)}'
+            data_manager.save_dataframe(df_prediction, history_key, 'df_history')
+            history_paths.append(history_key)
+            session['df_history_paths'] = history_paths
+            session['processing_steps'].append({
+                'icon': 'fa-compress-arrows-alt',
+                'color': 'text-warning',
+                'message': f'Applied {method.replace("_", " ").title()} prediction.'
+            })
+            if 'step_prediction' not in session:
+                session['step_prediction'] = []
+            session['step_prediction'].append(1)
+            session.modified = True
+
+            new_shape = df_prediction.shape
+            session['current_shape'] = new_shape
+
+            return jsonify({
+                'success': True,
+                'message': f'{method.replace("_", " ").title()} prediction applied successfully.',
+                'new_shape': new_shape,
+                'steps': session['processing_steps'],
+                'plots': plots
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'Prediction failed: {str(e)}'})
 
 @preprocessing_bp.route('/reset_sample_step', methods=['POST'])
 def reset_sample_step():
@@ -624,3 +741,5 @@ def reset_sample_step():
             response_data['plots'] = get_comparison_plots(df_before, df_current, 'boxplot', session.get('group_vector'), session.get('group_names'), context.title())
 
         return jsonify(response_data)
+    
+    
